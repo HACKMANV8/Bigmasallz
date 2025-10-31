@@ -1,0 +1,130 @@
+version: '3.8'
+
+services:
+  # FastAPI Backend
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: synthaix-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - BACKEND_HOST=0.0.0.0
+      - BACKEND_PORT=8000
+      - CORS_ORIGINS=http://localhost:3000
+      - CHROMADB_PATH=/app/data/chromadb
+      - DATABASE_URL=${DATABASE_URL:-}
+      - REDIS_URL=${REDIS_URL:-}
+    env_file:
+      - .env
+    volumes:
+      - ./backend:/app
+      - chromadb-data:/app/data/chromadb
+      - backend-logs:/app/logs
+    depends_on:
+      - redis
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - synthaix-network
+
+  # Next.js Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        - NEXT_PUBLIC_API_URL=http://localhost:8000
+    container_name: synthaix-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://backend:8000
+      - NODE_ENV=production
+    env_file:
+      - .env
+    depends_on:
+      - backend
+    restart: unless-stopped
+    networks:
+      - synthaix-network
+
+  # Redis (for distributed job queue)
+  redis:
+    image: redis:7-alpine
+    container_name: synthaix-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - synthaix-network
+
+  # PostgreSQL (optional - for persistent job storage)
+  postgres:
+    image: postgres:15-alpine
+    container_name: synthaix-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_DB=synthaix
+      - POSTGRES_USER=synthaix
+      - POSTGRES_PASSWORD=synthaix_password
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U synthaix"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - synthaix-network
+    profiles:
+      - with-db
+
+  # Nginx (optional - reverse proxy for production)
+  nginx:
+    image: nginx:alpine
+    container_name: synthaix-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - backend
+      - frontend
+    restart: unless-stopped
+    networks:
+      - synthaix-network
+    profiles:
+      - production
+
+volumes:
+  chromadb-data:
+    driver: local
+  redis-data:
+    driver: local
+  postgres-data:
+    driver: local
+  backend-logs:
+    driver: local
+
+networks:
+  synthaix-network:
+    driver: bridge
