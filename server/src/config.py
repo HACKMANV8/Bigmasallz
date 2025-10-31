@@ -68,7 +68,7 @@ class VectorStoreConfig(BaseModel):
     persist_path: Path = Path("./vector_store")
     collection_name: str = "dataset_rows"
     embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
-    similarity_threshold: float = 0.2
+    similarity_threshold: float = 0.85  # Higher threshold = stricter dedup (0.85 means 85% similar)
     max_retry_attempts: int = 3
 
 
@@ -145,7 +145,7 @@ class Settings(BaseSettings):
     vector_store_path: str = "./vector_store"
     vector_store_collection: str = "dataset_rows"
     vector_store_embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
-    vector_store_similarity_threshold: float = 0.2
+    vector_store_similarity_threshold: float = 0.85  # Higher threshold = stricter dedup (0.85 means 85% similar)
     vector_store_max_retry_attempts: int = 3
 
     @property

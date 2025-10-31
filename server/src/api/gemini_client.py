@@ -6,6 +6,7 @@ from typing import Any
 
 import google.generativeai as genai
 from google.generativeai.types import GenerationConfig
+from json_repair import repair_json
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from src.config import settings
@@ -221,13 +222,17 @@ class GeminiClient:
                     default=constraint_data.get("default")
                 )
 
+                # Normalize depends_on to list[str] if needed
+                depends_on_raw = field_data.get("depends_on")
+                depends_on = self._normalize_depends_on(depends_on_raw)
+                
                 field = FieldDefinition(
                     name=field_data["name"],
                     type=FieldType(field_data["type"]),
                     description=field_data.get("description"),
                     constraints=constraints,
                     sample_values=field_data.get("sample_values", []),
-                    depends_on=field_data.get("depends_on"),
+                    depends_on=depends_on,
                     generation_hint=field_data.get("generation_hint")
                 )
                 fields.append(field)
@@ -331,7 +336,19 @@ class GeminiClient:
                 json_end = response_text.find("```", json_start)
                 response_text = response_text[json_start:json_end].strip()
 
-            data = json.loads(response_text)
+            # Try parsing as-is first
+            try:
+                data = json.loads(response_text)
+            except json.JSONDecodeError as parse_error:
+                # Attempt repair for truncated/malformed JSON
+                logger.warning(f"Initial JSON parse failed: {parse_error}. Attempting repair...")
+                try:
+                    repaired_text = repair_json(response_text)
+                    data = json.loads(repaired_text)
+                    logger.info("Successfully repaired malformed JSON")
+                except Exception as repair_error:
+                    logger.error(f"JSON repair also failed: {repair_error}")
+                    raise parse_error  # Re-raise original error
 
             # Handle both array and object with "data" key
             if isinstance(data, dict) and "data" in data:
@@ -516,6 +533,20 @@ Return ONLY the JSON array, no additional text or explanations.
         if isinstance(value, dict):
             return [json.dumps(value)]
         return [str(value)]
+
+    @staticmethod
+    def _normalize_depends_on(depends_on_data: Any) -> list[str] | None:
+        """Coerce LLM-provided depends_on field into expected list[str] structure."""
+        if depends_on_data is None:
+            return None
+        if isinstance(depends_on_data, list):
+            # Already a list, ensure all items are strings
+            return [str(item) for item in depends_on_data]
+        if isinstance(depends_on_data, str):
+            # Single string, wrap in list
+            return [depends_on_data]
+        # For other types (int, dict, etc.), convert to string and wrap
+        return [str(depends_on_data)]
 
 
 # Global client instance
