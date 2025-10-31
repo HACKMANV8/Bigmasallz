@@ -1,10 +1,11 @@
 """Data models for the synthetic data generation tool."""
 
-from enum import Enum
 from datetime import datetime
-from typing import Dict, List, Optional, Any, Union
-from pydantic import BaseModel, Field
+from enum import Enum
+from typing import Any
 from uuid import UUID, uuid4
+
+from pydantic import BaseModel, Field
 
 
 class FieldType(str, Enum):
@@ -52,57 +53,57 @@ class FieldConstraint(BaseModel):
     """Constraints for a field."""
     unique: bool = False
     nullable: bool = True
-    min_value: Optional[Union[int, float]] = None
-    max_value: Optional[Union[int, float]] = None
-    min_length: Optional[int] = None
-    max_length: Optional[int] = None
-    pattern: Optional[str] = None
-    enum_values: Optional[List[str]] = None
-    format: Optional[str] = None
-    default: Optional[Any] = None
+    min_value: int | float | None = None
+    max_value: int | float | None = None
+    min_length: int | None = None
+    max_length: int | None = None
+    pattern: str | None = None
+    enum_values: list[str] | None = None
+    format: str | None = None
+    default: Any | None = None
 
 
 class FieldDefinition(BaseModel):
     """Definition of a single field in the schema."""
     name: str
     type: FieldType
-    description: Optional[str] = None
+    description: str | None = None
     constraints: FieldConstraint = Field(default_factory=FieldConstraint)
-    sample_values: List[Any] = Field(default_factory=list)
-    depends_on: Optional[List[str]] = None  # Field dependencies
-    generation_hint: Optional[str] = None  # Hint for LLM on how to generate
+    sample_values: list[Any] = Field(default_factory=list)
+    depends_on: list[str] | None = None  # Field dependencies
+    generation_hint: str | None = None  # Hint for LLM on how to generate
 
 
 class DataSchema(BaseModel):
     """Schema definition for the dataset."""
-    fields: List[FieldDefinition]
-    description: Optional[str] = None
-    relationships: Optional[Dict[str, List[str]]] = None  # Field relationships
-    metadata: Dict[str, Any] = Field(default_factory=dict)
-    
-    def get_field(self, name: str) -> Optional[FieldDefinition]:
+    fields: list[FieldDefinition]
+    description: str | None = None
+    relationships: dict[str, list[str]] | None = None  # Field relationships
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    def get_field(self, name: str) -> FieldDefinition | None:
         """Get field definition by name."""
         for field in self.fields:
             if field.name == name:
                 return field
         return None
-    
-    def validate_constraints(self) -> List[str]:
+
+    def validate_constraints(self) -> list[str]:
         """Validate schema constraints and return any issues."""
         issues = []
         field_names = {f.name for f in self.fields}
-        
+
         # Check for duplicate field names
         if len(field_names) != len(self.fields):
             issues.append("Duplicate field names detected")
-        
+
         # Check field dependencies
         for field in self.fields:
             if field.depends_on:
                 for dep in field.depends_on:
                     if dep not in field_names:
                         issues.append(f"Field '{field.name}' depends on non-existent field '{dep}'")
-        
+
         return issues
 
 
@@ -113,8 +114,8 @@ class ChunkMetadata(BaseModel):
     rows_generated: int
     storage_location: str
     timestamp: datetime = Field(default_factory=datetime.now)
-    checksum: Optional[str] = None
-    size_bytes: Optional[int] = None
+    checksum: str | None = None
+    size_bytes: int | None = None
 
 
 class JobSpecification(BaseModel):
@@ -125,11 +126,11 @@ class JobSpecification(BaseModel):
     chunk_size: int = 1000
     output_format: OutputFormat = OutputFormat.CSV
     storage_type: StorageType = StorageType.DISK
-    uniqueness_fields: List[str] = Field(default_factory=list)
-    seed: Optional[int] = None
+    uniqueness_fields: list[str] = Field(default_factory=list)
+    seed: int | None = None
     created_at: datetime = Field(default_factory=datetime.now)
-    created_by: Optional[str] = None
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    created_by: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class JobProgress(BaseModel):
@@ -139,14 +140,14 @@ class JobProgress(BaseModel):
     rows_generated: int = 0
     chunks_completed: int = 0
     total_chunks: int
-    current_chunk: Optional[int] = None
-    started_at: Optional[datetime] = None
-    completed_at: Optional[datetime] = None
-    paused_at: Optional[datetime] = None
-    error_message: Optional[str] = None
+    current_chunk: int | None = None
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    paused_at: datetime | None = None
+    error_message: str | None = None
     progress_percentage: float = 0.0
-    estimated_completion: Optional[datetime] = None
-    
+    estimated_completion: datetime | None = None
+
     def update_progress(self):
         """Update progress percentage."""
         if self.total_chunks > 0:
@@ -157,10 +158,10 @@ class JobState(BaseModel):
     """Complete state of a generation job."""
     specification: JobSpecification
     progress: JobProgress
-    chunks: List[ChunkMetadata] = Field(default_factory=list)
+    chunks: list[ChunkMetadata] = Field(default_factory=list)
     schema_validated: bool = False
     can_resume: bool = True
-    
+
     def add_chunk(self, chunk: ChunkMetadata):
         """Add completed chunk and update progress."""
         self.chunks.append(chunk)
@@ -172,16 +173,16 @@ class JobState(BaseModel):
 class SchemaExtractionRequest(BaseModel):
     """Request for schema extraction from natural language."""
     user_input: str
-    context: Optional[Dict[str, Any]] = None
-    example_data: Optional[str] = None
+    context: dict[str, Any] | None = None
+    example_data: str | None = None
 
 
 class SchemaExtractionResponse(BaseModel):
     """Response from schema extraction."""
     schema: DataSchema
     confidence: float
-    suggestions: List[str] = Field(default_factory=list)
-    warnings: List[str] = Field(default_factory=list)
+    suggestions: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
 
 
 class ChunkGenerationRequest(BaseModel):
@@ -190,28 +191,28 @@ class ChunkGenerationRequest(BaseModel):
     chunk_id: int
     schema: DataSchema
     num_rows: int
-    existing_values: Optional[Dict[str, List[Any]]] = None  # For uniqueness
-    seed: Optional[int] = None
+    existing_values: dict[str, list[Any]] | None = None  # For uniqueness
+    seed: int | None = None
 
 
 class ChunkGenerationResponse(BaseModel):
     """Response from chunk generation."""
     chunk_id: int
-    data: List[Dict[str, Any]]
+    data: list[dict[str, Any]]
     rows_generated: int
     metadata: ChunkMetadata
-    issues: List[str] = Field(default_factory=list)
+    issues: list[str] = Field(default_factory=list)
 
 
 class DatasetDownloadInfo(BaseModel):
     """Information for downloading completed dataset."""
     job_id: UUID
-    download_url: Optional[str] = None
-    file_path: Optional[str] = None
+    download_url: str | None = None
+    file_path: str | None = None
     file_size_bytes: int
     format: OutputFormat
     total_rows: int
-    expires_at: Optional[datetime] = None
+    expires_at: datetime | None = None
     checksum: str
 
 
@@ -219,7 +220,7 @@ class JobControlRequest(BaseModel):
     """Request to control job execution."""
     job_id: UUID
     action: str  # "pause", "resume", "cancel", "retry"
-    reason: Optional[str] = None
+    reason: str | None = None
 
 
 class ProgressUpdateNotification(BaseModel):

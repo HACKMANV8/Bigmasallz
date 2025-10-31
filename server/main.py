@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Main entry point for the Synthetic Dataset Generation Tool."""
 
-import sys
 import argparse
+import sys
 from pathlib import Path
 
 # Add src to path
@@ -24,9 +24,9 @@ def main():
         choices=["server", "version"],
         help="Command to execute"
     )
-    
+
     args = parser.parse_args()
-    
+
     if args.command == "server":
         logger.info("Starting MCP server...")
         run_mcp_server()

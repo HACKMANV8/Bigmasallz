@@ -3,7 +3,6 @@
 import logging
 import sys
 from pathlib import Path
-from typing import Optional
 
 from src.config import settings
 
@@ -13,7 +12,7 @@ def setup_logging():
     # Create logs directory if it doesn't exist
     log_file = Path(settings.log_file)
     log_file.parent.mkdir(parents=True, exist_ok=True)
-    
+
     # Configure root logger
     logging.basicConfig(
         level=getattr(logging, settings.log_level.upper()),

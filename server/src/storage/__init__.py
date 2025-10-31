@@ -1,10 +1,10 @@
 """Storage module initialization."""
 
 from src.storage.handlers import (
-    StorageHandler,
     DiskStorageHandler,
     MemoryStorageHandler,
-    get_storage_handler
+    StorageHandler,
+    get_storage_handler,
 )
 
 __all__ = [

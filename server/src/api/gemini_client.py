@@ -2,8 +2,8 @@
 
 import json
 import time
-import asyncio
-from typing import Dict, List, Any, Optional
+from typing import Any
+
 import google.generativeai as genai
 from google.generativeai.types import GenerationConfig
 from tenacity import retry, stop_after_attempt, wait_exponential
@@ -11,11 +11,11 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 from src.config import settings
 from src.core.models import (
     DataSchema,
+    FieldConstraint,
+    FieldDefinition,
+    FieldType,
     SchemaExtractionRequest,
     SchemaExtractionResponse,
-    FieldType,
-    FieldDefinition,
-    FieldConstraint
 )
 from src.utils.logger import get_logger
 
@@ -24,8 +24,8 @@ logger = get_logger(__name__)
 
 class GeminiClient:
     """Client for interacting with Google Gemini API."""
-    
-    def __init__(self, api_key: Optional[str] = None):
+
+    def __init__(self, api_key: str | None = None):
         """Initialize Gemini client.
         
         Args:
@@ -33,33 +33,33 @@ class GeminiClient:
         """
         self.api_key = api_key or settings.gemini_api_key
         genai.configure(api_key=self.api_key)
-        
+
         self.model_name = settings.gemini_model
         self.max_retries = settings.gemini_max_retries
         self.timeout = settings.gemini_timeout
-        
+
         # Rate limiting
         self.requests_per_minute = settings.rate_limit_requests_per_minute
         self.tokens_per_minute = settings.rate_limit_tokens_per_minute
-        self.request_times: List[float] = []
-        
+        self.request_times: list[float] = []
+
         logger.info(f"Initialized Gemini client with model: {self.model_name}")
-    
+
     def _check_rate_limit(self):
         """Check and enforce rate limiting."""
         current_time = time.time()
         # Remove requests older than 1 minute
         self.request_times = [t for t in self.request_times if current_time - t < 60]
-        
+
         if len(self.request_times) >= self.requests_per_minute:
             sleep_time = 60 - (current_time - self.request_times[0])
             if sleep_time > 0:
                 logger.warning(f"Rate limit reached, sleeping for {sleep_time:.2f} seconds")
                 time.sleep(sleep_time)
                 self.request_times = []
-        
+
         self.request_times.append(current_time)
-    
+
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=2, max=10)
@@ -75,33 +75,33 @@ class GeminiClient:
             Generated text content
         """
         self._check_rate_limit()
-        
+
         model = genai.GenerativeModel(self.model_name)
-        
+
         generation_config = GenerationConfig(
             temperature=kwargs.get("temperature", 0.7),
             top_p=kwargs.get("top_p", 0.95),
             top_k=kwargs.get("top_k", 40),
             max_output_tokens=kwargs.get("max_output_tokens", 8192),
         )
-        
+
         try:
             response = model.generate_content(
                 prompt,
                 generation_config=generation_config,
                 request_options={"timeout": self.timeout}
             )
-            
+
             if response.text:
                 return response.text
             else:
                 logger.error("Empty response from Gemini API")
                 raise ValueError("Empty response from Gemini API")
-                
+
         except Exception as e:
             logger.error(f"Error generating content: {e}")
             raise
-    
+
     def extract_schema(self, request: SchemaExtractionRequest) -> SchemaExtractionResponse:
         """Extract structured schema from natural language description.
         
@@ -112,10 +112,10 @@ class GeminiClient:
             Extracted schema with confidence and suggestions
         """
         logger.info(f"Extracting schema from user input: {request.user_input[:100]}...")
-        
+
         prompt = self._build_schema_extraction_prompt(request)
         response_text = self._generate_content(prompt, temperature=0.3)
-        
+
         # Parse JSON response
         try:
             # Extract JSON from markdown code blocks if present
@@ -127,9 +127,9 @@ class GeminiClient:
                 json_start = response_text.find("```") + 3
                 json_end = response_text.find("```", json_start)
                 response_text = response_text[json_start:json_end].strip()
-            
+
             schema_data = json.loads(response_text)
-            
+
             # Convert to proper models
             fields = []
             for field_data in schema_data.get("fields", []):
@@ -146,7 +146,7 @@ class GeminiClient:
                     format=constraint_data.get("format"),
                     default=constraint_data.get("default")
                 )
-                
+
                 field = FieldDefinition(
                     name=field_data["name"],
                     type=FieldType(field_data["type"]),
@@ -157,33 +157,33 @@ class GeminiClient:
                     generation_hint=field_data.get("generation_hint")
                 )
                 fields.append(field)
-            
+
             schema = DataSchema(
                 fields=fields,
                 description=schema_data.get("description"),
                 relationships=schema_data.get("relationships"),
                 metadata=schema_data.get("metadata", {})
             )
-            
+
             return SchemaExtractionResponse(
                 schema=schema,
                 confidence=schema_data.get("confidence", 0.85),
                 suggestions=schema_data.get("suggestions", []),
                 warnings=schema_data.get("warnings", [])
             )
-            
+
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse schema JSON: {e}")
             logger.debug(f"Response text: {response_text}")
             raise ValueError(f"Failed to parse schema from LLM response: {e}")
-    
+
     def generate_data_chunk(
         self,
         schema: DataSchema,
         num_rows: int,
-        existing_values: Optional[Dict[str, List[Any]]] = None,
-        seed: Optional[int] = None
-    ) -> List[Dict[str, Any]]:
+        existing_values: dict[str, list[Any]] | None = None,
+        seed: int | None = None
+    ) -> list[dict[str, Any]]:
         """Generate a chunk of synthetic data.
         
         Args:
@@ -196,10 +196,10 @@ class GeminiClient:
             List of generated data rows
         """
         logger.info(f"Generating {num_rows} rows of data")
-        
+
         prompt = self._build_data_generation_prompt(schema, num_rows, existing_values, seed)
         response_text = self._generate_content(prompt, temperature=0.8)
-        
+
         # Parse JSON response
         try:
             # Extract JSON from markdown code blocks if present
@@ -211,20 +211,20 @@ class GeminiClient:
                 json_start = response_text.find("```") + 3
                 json_end = response_text.find("```", json_start)
                 response_text = response_text[json_start:json_end].strip()
-            
+
             data = json.loads(response_text)
-            
+
             # Handle both array and object with "data" key
             if isinstance(data, dict) and "data" in data:
                 data = data["data"]
-            
+
             return data
-            
+
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse data JSON: {e}")
             logger.debug(f"Response text: {response_text[:500]}...")
             raise ValueError(f"Failed to parse data from LLM response: {e}")
-    
+
     def _build_schema_extraction_prompt(self, request: SchemaExtractionRequest) -> str:
         """Build prompt for schema extraction."""
         prompt = f"""You are an expert data engineer. Extract a structured data schema from the following user request.
@@ -232,13 +232,13 @@ class GeminiClient:
 User Request: {request.user_input}
 
 """
-        
+
         if request.context:
             prompt += f"\nAdditional Context: {json.dumps(request.context, indent=2)}\n"
-        
+
         if request.example_data:
             prompt += f"\nExample Data: {request.example_data}\n"
-        
+
         prompt += """
 Please analyze the request and generate a JSON schema with the following structure:
 
@@ -285,13 +285,13 @@ Important:
 Return ONLY the JSON schema, no additional text.
 """
         return prompt
-    
+
     def _build_data_generation_prompt(
         self,
         schema: DataSchema,
         num_rows: int,
-        existing_values: Optional[Dict[str, List[Any]]],
-        seed: Optional[int]
+        existing_values: dict[str, list[Any]] | None,
+        seed: int | None
     ) -> str:
         """Build prompt for data generation."""
         schema_json = {
@@ -319,20 +319,20 @@ Return ONLY the JSON schema, no additional text.
                 for f in schema.fields
             ]
         }
-        
+
         prompt = f"""You are a synthetic data generator. Generate {num_rows} rows of realistic data following this schema:
 
 Schema:
 {json.dumps(schema_json, indent=2)}
 
 """
-        
+
         if existing_values:
             prompt += f"\nExisting Values (avoid duplicates for unique fields):\n{json.dumps(existing_values, indent=2)}\n"
-        
+
         if seed:
             prompt += f"\nRandom Seed: {seed}\n"
-        
+
         prompt += f"""
 Requirements:
 - Generate EXACTLY {num_rows} rows
@@ -355,7 +355,7 @@ Return ONLY the JSON array, no additional text or explanations.
 
 
 # Global client instance
-_client: Optional[GeminiClient] = None
+_client: GeminiClient | None = None
 
 
 def get_gemini_client() -> GeminiClient:

@@ -1,9 +1,9 @@
 """Configuration management for the synthetic data generation tool."""
 
-import os
 from pathlib import Path
-from typing import Literal, Optional
-from pydantic import BaseModel, Field
+from typing import Literal
+
+from pydantic import BaseModel
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -31,14 +31,14 @@ class StorageConfig(BaseModel):
     temp_path: Path = Path("./temp")
     output_path: Path = Path("./output")
     max_memory_chunks: int = 100
-    
+
     # Cloud storage options
-    cloud_bucket: Optional[str] = None
-    cloud_region: Optional[str] = None
-    aws_access_key: Optional[str] = None
-    aws_secret_key: Optional[str] = None
-    gcs_project_id: Optional[str] = None
-    gcs_credentials_path: Optional[Path] = None
+    cloud_bucket: str | None = None
+    cloud_region: str | None = None
+    aws_access_key: str | None = None
+    aws_secret_key: str | None = None
+    gcs_project_id: str | None = None
+    gcs_credentials_path: Path | None = None
 
 
 class GenerationConfig(BaseModel):
@@ -64,58 +64,58 @@ class RateLimitConfig(BaseModel):
 
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
-    
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore"
     )
-    
+
     # Gemini API
     gemini_api_key: str
     gemini_model: str = "gemini-1.5-pro"
     gemini_max_retries: int = 3
     gemini_timeout: int = 120
-    
+
     # MCP Server
     mcp_server_host: str = "localhost"
     mcp_server_port: int = 8000
     mcp_server_name: str = "synthetic-data-generator"
-    
+
     # Storage
     storage_type: Literal["memory", "disk", "cloud"] = "disk"
     temp_storage_path: str = "./temp"
     output_storage_path: str = "./output"
     max_memory_chunks: int = 100
-    
+
     # Cloud Storage (optional)
-    cloud_storage_bucket: Optional[str] = None
-    cloud_storage_region: Optional[str] = None
-    aws_access_key_id: Optional[str] = None
-    aws_secret_access_key: Optional[str] = None
-    gcs_project_id: Optional[str] = None
-    gcs_credentials_path: Optional[str] = None
-    
+    cloud_storage_bucket: str | None = None
+    cloud_storage_region: str | None = None
+    aws_access_key_id: str | None = None
+    aws_secret_access_key: str | None = None
+    gcs_project_id: str | None = None
+    gcs_credentials_path: str | None = None
+
     # Generation
     default_chunk_size: int = 1000
     max_chunk_size: int = 5000
     min_chunk_size: int = 100
     default_output_format: Literal["csv", "json", "parquet"] = "csv"
-    
+
     # Job Management
     job_persistence_path: str = "./temp/jobs"
     job_cleanup_days: int = 7
     max_concurrent_jobs: int = 5
-    
+
     # Rate Limiting
     rate_limit_requests_per_minute: int = 60
     rate_limit_tokens_per_minute: int = 50000
-    
+
     # Logging
     log_level: str = "INFO"
     log_file: str = "./logs/app.log"
-    
+
     @property
     def gemini(self) -> GeminiConfig:
         """Get Gemini configuration."""
@@ -125,7 +125,7 @@ class Settings(BaseSettings):
             max_retries=self.gemini_max_retries,
             timeout=self.gemini_timeout
         )
-    
+
     @property
     def mcp_server(self) -> MCPServerConfig:
         """Get MCP server configuration."""
@@ -134,7 +134,7 @@ class Settings(BaseSettings):
             port=self.mcp_server_port,
             name=self.mcp_server_name
         )
-    
+
     @property
     def storage(self) -> StorageConfig:
         """Get storage configuration."""
@@ -150,7 +150,7 @@ class Settings(BaseSettings):
             gcs_project_id=self.gcs_project_id,
             gcs_credentials_path=Path(self.gcs_credentials_path) if self.gcs_credentials_path else None
         )
-    
+
     @property
     def generation(self) -> GenerationConfig:
         """Get generation configuration."""
@@ -160,7 +160,7 @@ class Settings(BaseSettings):
             min_chunk_size=self.min_chunk_size,
             default_output_format=self.default_output_format
         )
-    
+
     @property
     def job(self) -> JobConfig:
         """Get job configuration."""
@@ -169,7 +169,7 @@ class Settings(BaseSettings):
             cleanup_days=self.job_cleanup_days,
             max_concurrent_jobs=self.max_concurrent_jobs
         )
-    
+
     @property
     def rate_limit(self) -> RateLimitConfig:
         """Get rate limit configuration."""

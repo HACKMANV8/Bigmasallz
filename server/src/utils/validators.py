@@ -2,10 +2,11 @@
 
 import re
 from datetime import datetime
-from typing import Any, List, Optional
-from email_validator import validate_email, EmailNotValidError
+from typing import Any
 
-from src.core.models import FieldType, FieldDefinition, FieldConstraint
+from email_validator import EmailNotValidError, validate_email
+
+from src.core.models import FieldConstraint, FieldDefinition, FieldType
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -19,7 +20,7 @@ class ValidationError(Exception):
 def validate_field_value(
     value: Any,
     field: FieldDefinition
-) -> tuple[bool, Optional[str]]:
+) -> tuple[bool, str | None]:
     """Validate a single field value against its definition.
     
     Args:
@@ -30,13 +31,13 @@ def validate_field_value(
         Tuple of (is_valid, error_message)
     """
     constraints = field.constraints
-    
+
     # Check nullable
     if value is None:
         if not constraints.nullable:
             return False, f"Field '{field.name}' cannot be null"
         return True, None
-    
+
     # Type-specific validation
     try:
         if field.type == FieldType.STRING:
@@ -69,58 +70,58 @@ def validate_field_value(
         return False, f"Validation error: {str(e)}"
 
 
-def _validate_string(value: Any, constraints: FieldConstraint) -> tuple[bool, Optional[str]]:
+def _validate_string(value: Any, constraints: FieldConstraint) -> tuple[bool, str | None]:
     """Validate string value."""
     if not isinstance(value, str):
         return False, "Value must be a string"
-    
+
     if constraints.min_length and len(value) < constraints.min_length:
         return False, f"String length must be at least {constraints.min_length}"
-    
+
     if constraints.max_length and len(value) > constraints.max_length:
         return False, f"String length must not exceed {constraints.max_length}"
-    
+
     if constraints.pattern and not re.match(constraints.pattern, value):
         return False, f"String does not match pattern: {constraints.pattern}"
-    
+
     return True, None
 
 
-def _validate_integer(value: Any, constraints: FieldConstraint) -> tuple[bool, Optional[str]]:
+def _validate_integer(value: Any, constraints: FieldConstraint) -> tuple[bool, str | None]:
     """Validate integer value."""
     if not isinstance(value, int) or isinstance(value, bool):
         try:
             value = int(value)
         except (ValueError, TypeError):
             return False, "Value must be an integer"
-    
+
     if constraints.min_value is not None and value < constraints.min_value:
         return False, f"Value must be at least {constraints.min_value}"
-    
+
     if constraints.max_value is not None and value > constraints.max_value:
         return False, f"Value must not exceed {constraints.max_value}"
-    
+
     return True, None
 
 
-def _validate_float(value: Any, constraints: FieldConstraint) -> tuple[bool, Optional[str]]:
+def _validate_float(value: Any, constraints: FieldConstraint) -> tuple[bool, str | None]:
     """Validate float value."""
     if not isinstance(value, (int, float)) or isinstance(value, bool):
         try:
             value = float(value)
         except (ValueError, TypeError):
             return False, "Value must be a number"
-    
+
     if constraints.min_value is not None and value < constraints.min_value:
         return False, f"Value must be at least {constraints.min_value}"
-    
+
     if constraints.max_value is not None and value > constraints.max_value:
         return False, f"Value must not exceed {constraints.max_value}"
-    
+
     return True, None
 
 
-def _validate_boolean(value: Any) -> tuple[bool, Optional[str]]:
+def _validate_boolean(value: Any) -> tuple[bool, str | None]:
     """Validate boolean value."""
     if not isinstance(value, bool):
         if isinstance(value, str):
@@ -131,7 +132,7 @@ def _validate_boolean(value: Any) -> tuple[bool, Optional[str]]:
     return True, None
 
 
-def _validate_date(value: Any) -> tuple[bool, Optional[str]]:
+def _validate_date(value: Any) -> tuple[bool, str | None]:
     """Validate date value."""
     if isinstance(value, str):
         try:
@@ -142,7 +143,7 @@ def _validate_date(value: Any) -> tuple[bool, Optional[str]]:
     return False, "Date must be a string in YYYY-MM-DD format"
 
 
-def _validate_datetime(value: Any) -> tuple[bool, Optional[str]]:
+def _validate_datetime(value: Any) -> tuple[bool, str | None]:
     """Validate datetime value."""
     if isinstance(value, str):
         # Try common datetime formats
@@ -162,11 +163,11 @@ def _validate_datetime(value: Any) -> tuple[bool, Optional[str]]:
     return False, "Datetime must be a string"
 
 
-def _validate_email_field(value: Any) -> tuple[bool, Optional[str]]:
+def _validate_email_field(value: Any) -> tuple[bool, str | None]:
     """Validate email value."""
     if not isinstance(value, str):
         return False, "Email must be a string"
-    
+
     try:
         validate_email(value, check_deliverability=False)
         return True, None
@@ -174,62 +175,62 @@ def _validate_email_field(value: Any) -> tuple[bool, Optional[str]]:
         return False, f"Invalid email: {str(e)}"
 
 
-def _validate_phone(value: Any) -> tuple[bool, Optional[str]]:
+def _validate_phone(value: Any) -> tuple[bool, str | None]:
     """Validate phone number value."""
     if not isinstance(value, str):
         return False, "Phone number must be a string"
-    
+
     # Basic phone validation - allow digits, spaces, dashes, parentheses, plus
     pattern = r'^[\d\s\-\(\)\+]+$'
     if not re.match(pattern, value):
         return False, "Invalid phone number format"
-    
+
     # Check if it has enough digits
     digits = re.sub(r'\D', '', value)
     if len(digits) < 10:
         return False, "Phone number must have at least 10 digits"
-    
+
     return True, None
 
 
-def _validate_uuid(value: Any) -> tuple[bool, Optional[str]]:
+def _validate_uuid(value: Any) -> tuple[bool, str | None]:
     """Validate UUID value."""
     if not isinstance(value, str):
         return False, "UUID must be a string"
-    
+
     uuid_pattern = r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
     if not re.match(uuid_pattern, value.lower()):
         return False, "Invalid UUID format"
-    
+
     return True, None
 
 
-def _validate_enum(value: Any, constraints: FieldConstraint) -> tuple[bool, Optional[str]]:
+def _validate_enum(value: Any, constraints: FieldConstraint) -> tuple[bool, str | None]:
     """Validate enum value."""
     if not constraints.enum_values:
         return False, "Enum values not specified"
-    
+
     if value not in constraints.enum_values:
         return False, f"Value must be one of: {', '.join(map(str, constraints.enum_values))}"
-    
+
     return True, None
 
 
-def _validate_array(value: Any, constraints: FieldConstraint) -> tuple[bool, Optional[str]]:
+def _validate_array(value: Any, constraints: FieldConstraint) -> tuple[bool, str | None]:
     """Validate array value."""
     if not isinstance(value, list):
         return False, "Value must be an array"
-    
+
     if constraints.min_length and len(value) < constraints.min_length:
         return False, f"Array length must be at least {constraints.min_length}"
-    
+
     if constraints.max_length and len(value) > constraints.max_length:
         return False, f"Array length must not exceed {constraints.max_length}"
-    
+
     return True, None
 
 
-def validate_row(row: dict, schema: Any) -> List[str]:
+def validate_row(row: dict, schema: Any) -> list[str]:
     """Validate an entire row against schema.
     
     Args:
@@ -240,16 +241,16 @@ def validate_row(row: dict, schema: Any) -> List[str]:
         List of validation error messages (empty if valid)
     """
     errors = []
-    
+
     # Check all required fields are present
     for field in schema.fields:
         if field.name not in row and not field.constraints.nullable:
             errors.append(f"Missing required field: {field.name}")
             continue
-        
+
         if field.name in row:
             is_valid, error_msg = validate_field_value(row[field.name], field)
             if not is_valid:
                 errors.append(f"{field.name}: {error_msg}")
-    
+
     return errors

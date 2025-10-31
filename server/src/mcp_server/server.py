@@ -8,32 +8,25 @@ This module implements the Model Context Protocol server with tools for:
 - Dataset download
 """
 
-import asyncio
-from typing import Any, Dict, List, Optional
+from typing import Any
 from uuid import UUID
-from datetime import datetime
-from pathlib import Path
 
 from mcp.server import Server
-from mcp.types import Tool, TextContent, ImageContent, EmbeddedResource
-from pydantic import AnyUrl
+from mcp.types import EmbeddedResource, ImageContent, TextContent, Tool
 
+from src.api.gemini_client import get_gemini_client
+from src.config import settings
+from src.core.job_manager import get_job_manager
 from src.core.models import (
-    SchemaExtractionRequest,
+    JobControlRequest,
     JobSpecification,
     JobStatus,
     OutputFormat,
+    SchemaExtractionRequest,
     StorageType,
-    ChunkGenerationRequest,
-    ChunkGenerationResponse,
-    JobControlRequest,
-    DatasetDownloadInfo,
 )
-from src.core.job_manager import get_job_manager
-from src.api.gemini_client import get_gemini_client
 from src.storage.handlers import get_storage_handler
 from src.utils.logger import get_logger
-from src.config import settings
 
 logger = get_logger(__name__)
 
@@ -267,19 +260,19 @@ async def call_tool(name: str, arguments: Any) -> list[TextContent | ImageConten
         return [TextContent(type="text", text=f"Error: {str(e)}")]
 
 
-async def handle_extract_schema(arguments: Dict[str, Any]) -> list[TextContent]:
+async def handle_extract_schema(arguments: dict[str, Any]) -> list[TextContent]:
     """Handle schema extraction from natural language."""
     logger.info("Extracting schema from user input")
-    
+
     request = SchemaExtractionRequest(
         user_input=arguments["user_input"],
         context=arguments.get("context"),
         example_data=arguments.get("example_data")
     )
-    
+
     # Use Gemini to extract schema
     response = gemini_client.extract_schema(request)
-    
+
     # Format response
     result = {
         "schema": response.schema.model_dump(mode='json'),
@@ -287,7 +280,7 @@ async def handle_extract_schema(arguments: Dict[str, Any]) -> list[TextContent]:
         "suggestions": response.suggestions,
         "warnings": response.warnings
     }
-    
+
     import json
     return [TextContent(
         type="text",
@@ -295,12 +288,12 @@ async def handle_extract_schema(arguments: Dict[str, Any]) -> list[TextContent]:
     )]
 
 
-async def handle_create_job(arguments: Dict[str, Any]) -> list[TextContent]:
+async def handle_create_job(arguments: dict[str, Any]) -> list[TextContent]:
     """Handle job creation."""
     logger.info("Creating new data generation job")
-    
-    from src.core.models import DataSchema, FieldDefinition, FieldConstraint, FieldType
-    
+
+    from src.core.models import DataSchema, FieldConstraint, FieldDefinition, FieldType
+
     # Parse schema
     schema_data = arguments["schema"]
     fields = []
@@ -316,14 +309,14 @@ async def handle_create_job(arguments: Dict[str, Any]) -> list[TextContent]:
             generation_hint=field_data.get("generation_hint")
         )
         fields.append(field)
-    
+
     schema = DataSchema(
         fields=fields,
         description=schema_data.get("description"),
         relationships=schema_data.get("relationships"),
         metadata=schema_data.get("metadata", {})
     )
-    
+
     # Create job specification
     spec = JobSpecification(
         schema=schema,
@@ -334,11 +327,11 @@ async def handle_create_job(arguments: Dict[str, Any]) -> list[TextContent]:
         uniqueness_fields=arguments.get("uniqueness_fields", []),
         seed=arguments.get("seed")
     )
-    
+
     # Create job
     job_state = job_manager.create_job(spec)
     job_manager.validate_schema(job_state.specification.job_id)
-    
+
     import json
     result = {
         "job_id": str(job_state.specification.job_id),
@@ -348,40 +341,40 @@ async def handle_create_job(arguments: Dict[str, Any]) -> list[TextContent]:
         "status": job_state.progress.status.value,
         "message": "Job created successfully. Use generate_chunk to start generating data."
     }
-    
+
     return [TextContent(
         type="text",
         text=f"Job created:\n\n{json.dumps(result, indent=2)}"
     )]
 
 
-async def handle_generate_chunk(arguments: Dict[str, Any]) -> list[TextContent]:
+async def handle_generate_chunk(arguments: dict[str, Any]) -> list[TextContent]:
     """Handle chunk generation."""
     job_id = UUID(arguments["job_id"])
     chunk_id = arguments["chunk_id"]
-    
+
     logger.info(f"Generating chunk {chunk_id} for job {job_id}")
-    
+
     # Get job
     job = job_manager.get_job(job_id)
     if not job:
         return [TextContent(type="text", text=f"Job {job_id} not found")]
-    
+
     # Update status if this is the first chunk
     if job.progress.status == JobStatus.PENDING:
         job_manager.update_job_status(job_id, JobStatus.GENERATING)
-    
+
     # Calculate rows for this chunk
     remaining_rows = job.specification.total_rows - job.progress.rows_generated
     chunk_rows = min(job.specification.chunk_size, remaining_rows)
-    
+
     # Collect existing values for uniqueness
     existing_values = {}
     if job.specification.uniqueness_fields:
         for field_name in job.specification.uniqueness_fields:
             existing_values[field_name] = []
             # TODO: Collect existing values from previous chunks
-    
+
     try:
         # Generate data using Gemini
         data = gemini_client.generate_data_chunk(
@@ -390,7 +383,7 @@ async def handle_generate_chunk(arguments: Dict[str, Any]) -> list[TextContent]:
             existing_values=existing_values if existing_values else None,
             seed=job.specification.seed
         )
-        
+
         # Store chunk
         metadata = storage_handler.store_chunk(
             job_id=job_id,
@@ -398,14 +391,14 @@ async def handle_generate_chunk(arguments: Dict[str, Any]) -> list[TextContent]:
             data=data,
             format=job.specification.output_format
         )
-        
+
         # Update job progress
         job_manager.add_chunk(job_id, metadata)
-        
+
         # Check if job is complete
         if job.progress.chunks_completed >= job.progress.total_chunks:
             job_manager.update_job_status(job_id, JobStatus.COMPLETED)
-        
+
         import json
         result = {
             "chunk_id": chunk_id,
@@ -419,26 +412,26 @@ async def handle_generate_chunk(arguments: Dict[str, Any]) -> list[TextContent]:
                 "status": job.progress.status.value
             }
         }
-        
+
         return [TextContent(
             type="text",
             text=f"Chunk generated:\n\n{json.dumps(result, indent=2)}"
         )]
-        
+
     except Exception as e:
         logger.error(f"Error generating chunk: {e}")
         job_manager.update_job_status(job_id, JobStatus.FAILED, str(e))
         return [TextContent(type="text", text=f"Error generating chunk: {str(e)}")]
 
 
-async def handle_get_job_progress(arguments: Dict[str, Any]) -> list[TextContent]:
+async def handle_get_job_progress(arguments: dict[str, Any]) -> list[TextContent]:
     """Handle job progress query."""
     job_id = UUID(arguments["job_id"])
-    
+
     job = job_manager.get_job(job_id)
     if not job:
         return [TextContent(type="text", text=f"Job {job_id} not found")]
-    
+
     import json
     result = {
         "job_id": str(job_id),
@@ -452,27 +445,27 @@ async def handle_get_job_progress(arguments: Dict[str, Any]) -> list[TextContent
         "completed_at": str(job.progress.completed_at) if job.progress.completed_at else None,
         "error_message": job.progress.error_message
     }
-    
+
     return [TextContent(
         type="text",
         text=f"Job progress:\n\n{json.dumps(result, indent=2)}"
     )]
 
 
-async def handle_control_job(arguments: Dict[str, Any]) -> list[TextContent]:
+async def handle_control_job(arguments: dict[str, Any]) -> list[TextContent]:
     """Handle job control actions."""
     job_id = UUID(arguments["job_id"])
     action = arguments["action"]
     reason = arguments.get("reason")
-    
+
     request = JobControlRequest(
         job_id=job_id,
         action=action,
         reason=reason
     )
-    
+
     success = job_manager.control_job(request)
-    
+
     if success:
         return [TextContent(
             type="text",
@@ -485,14 +478,14 @@ async def handle_control_job(arguments: Dict[str, Any]) -> list[TextContent]:
         )]
 
 
-async def handle_list_jobs(arguments: Dict[str, Any]) -> list[TextContent]:
+async def handle_list_jobs(arguments: dict[str, Any]) -> list[TextContent]:
     """Handle job listing."""
     status_str = arguments.get("status")
     status = JobStatus(status_str) if status_str else None
     limit = arguments.get("limit", 100)
-    
+
     jobs = job_manager.list_jobs(status=status, limit=limit)
-    
+
     import json
     result = {
         "total": len(jobs),
@@ -508,27 +501,27 @@ async def handle_list_jobs(arguments: Dict[str, Any]) -> list[TextContent]:
             for job in jobs
         ]
     }
-    
+
     return [TextContent(
         type="text",
         text=f"Jobs:\n\n{json.dumps(result, indent=2)}"
     )]
 
 
-async def handle_merge_and_download(arguments: Dict[str, Any]) -> list[TextContent]:
+async def handle_merge_and_download(arguments: dict[str, Any]) -> list[TextContent]:
     """Handle dataset merging and download preparation."""
     job_id = UUID(arguments["job_id"])
-    
+
     job = job_manager.get_job(job_id)
     if not job:
         return [TextContent(type="text", text=f"Job {job_id} not found")]
-    
+
     if job.progress.status != JobStatus.COMPLETED:
         return [TextContent(
             type="text",
             text=f"Job {job_id} is not completed yet (status: {job.progress.status.value})"
         )]
-    
+
     # Merge chunks
     output_path = settings.storage.output_path / f"{job_id}.{job.specification.output_format.value}"
     merged_path = storage_handler.merge_chunks(
@@ -537,14 +530,14 @@ async def handle_merge_and_download(arguments: Dict[str, Any]) -> list[TextConte
         output_path=output_path,
         format=job.specification.output_format
     )
-    
+
     # Calculate file size and checksum
     import hashlib
     file_size = merged_path.stat().st_size
-    
+
     with open(merged_path, 'rb') as f:
         checksum = hashlib.sha256(f.read()).hexdigest()
-    
+
     import json
     result = {
         "job_id": str(job_id),
@@ -556,19 +549,19 @@ async def handle_merge_and_download(arguments: Dict[str, Any]) -> list[TextConte
         "checksum": checksum,
         "message": f"Dataset ready for download at: {merged_path}"
     }
-    
+
     return [TextContent(
         type="text",
         text=f"Dataset merged:\n\n{json.dumps(result, indent=2)}"
     )]
 
 
-async def handle_validate_schema(arguments: Dict[str, Any]) -> list[TextContent]:
+async def handle_validate_schema(arguments: dict[str, Any]) -> list[TextContent]:
     """Handle schema validation."""
-    from src.core.models import DataSchema, FieldDefinition, FieldConstraint, FieldType
-    
+    from src.core.models import DataSchema, FieldConstraint, FieldDefinition, FieldType
+
     schema_data = arguments["schema"]
-    
+
     # Parse schema
     fields = []
     for field_data in schema_data["fields"]:
@@ -583,17 +576,17 @@ async def handle_validate_schema(arguments: Dict[str, Any]) -> list[TextContent]
             generation_hint=field_data.get("generation_hint")
         )
         fields.append(field)
-    
+
     schema = DataSchema(
         fields=fields,
         description=schema_data.get("description"),
         relationships=schema_data.get("relationships"),
         metadata=schema_data.get("metadata", {})
     )
-    
+
     # Validate
     issues = schema.validate_constraints()
-    
+
     import json
     if issues:
         result = {
@@ -606,7 +599,7 @@ async def handle_validate_schema(arguments: Dict[str, Any]) -> list[TextContent]
             "message": "Schema is valid",
             "field_count": len(schema.fields)
         }
-    
+
     return [TextContent(
         type="text",
         text=f"Schema validation:\n\n{json.dumps(result, indent=2)}"
