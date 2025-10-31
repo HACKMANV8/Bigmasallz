@@ -225,7 +225,7 @@ class GeminiClient:
                 # Normalize depends_on to list[str] if needed
                 depends_on_raw = field_data.get("depends_on")
                 depends_on = self._normalize_depends_on(depends_on_raw)
-                
+
                 field = FieldDefinition(
                     name=field_data["name"],
                     type=FieldType(field_data["type"]),

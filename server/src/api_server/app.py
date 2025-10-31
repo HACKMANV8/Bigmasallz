@@ -3,8 +3,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from src.api_server.routers import health, schema, jobs
-from src.config import settings
+from src.api_server.routers import health, jobs, schema
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -18,7 +17,7 @@ def create_app() -> FastAPI:
         docs_url="/docs",
         redoc_url="/redoc"
     )
-    
+
     # Configure CORS
     app.add_middleware(
         CORSMiddleware,
@@ -27,29 +26,43 @@ def create_app() -> FastAPI:
             "http://localhost:3001",  # Next.js alternative port
             "http://127.0.0.1:3000",
             "http://127.0.0.1:3001",
+            "http://localhost:8501",  # Streamlit
+            "http://127.0.0.1:8501",
         ],
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
     )
-    
+
     # Include routers
+    app.include_router(health.router, tags=["health"])  # No prefix for root health check
     app.include_router(health.router, prefix="/health", tags=["health"])
     app.include_router(schema.router, prefix="/schema", tags=["schema"])
     app.include_router(jobs.router, prefix="/jobs", tags=["jobs"])
     
+    @app.get("/")
+    async def root():
+        """Root endpoint with API information."""
+        return {
+            "message": "Synthetic Data Generator API",
+            "version": "0.1.0",
+            "status": "running",
+            "docs": "/docs",
+            "health": "/health"
+        }
+
     @app.on_event("startup")
     async def startup_event():
         """Initialize services on startup."""
         logger.info("Starting Synthetic Data Generator API server")
         # Initialize any startup tasks here
-        
+
     @app.on_event("shutdown")
     async def shutdown_event():
         """Cleanup on shutdown."""
         logger.info("Shutting down Synthetic Data Generator API server")
         # Cleanup tasks here
-    
+
     return app
 
 # Create app instance

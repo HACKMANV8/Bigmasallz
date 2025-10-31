@@ -14,7 +14,6 @@ If the prompt is not supplied via ``--prompt``, the script will ask interactivel
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 from pathlib import Path
 from typing import Any

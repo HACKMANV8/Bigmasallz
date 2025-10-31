@@ -3,7 +3,7 @@ name = "synthetic-data-generator"
 version = "0.1.0"
 description = "Synthetic dataset generation tool using LLMs and MCP for creating reasonably sized datasets with Gemini API"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.13"
 authors = [
     { name = "HACKMAN Team" }
 ]
@@ -16,6 +16,8 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
 ]
 
 dependencies = [
@@ -23,6 +25,9 @@ dependencies = [
     "mcp>=1.0.0",
     # Google Gemini API
     "google-generativeai>=0.8.0",
+    # API Server
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
     # Core dependencies
     "pydantic>=2.0.0",
     "pydantic-settings>=2.0.0",
@@ -41,6 +46,9 @@ dependencies = [
     "chromadb>=0.5.3",
     "sentence-transformers>=3.0.0",
     "json-repair>=0.28.4",
+    # Frontend
+    "streamlit>=1.39.0",
+    "requests>=2.32.0",
 ]
 
 [project.optional-dependencies]

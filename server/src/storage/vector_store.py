@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import threading
 import uuid
-from typing import Any, Iterable, List, Tuple
+from collections.abc import Iterable
+from typing import Any
 
 from sentence_transformers import SentenceTransformer
 
@@ -48,9 +49,9 @@ class VectorStore:
     def filter_new_rows(
         self,
         job_id: str,
-        rows: List[dict[str, Any]],
+        rows: list[dict[str, Any]],
         unique_fields: Iterable[str] | None = None,
-    ) -> Tuple[List[dict[str, Any]], List[dict[str, Any]]]:
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         """Filter out rows that already exist in the vector store.
 
         Args:
@@ -65,8 +66,8 @@ class VectorStore:
             return [], []
 
         unique_fields = list(unique_fields or [])
-        accepted: List[dict[str, Any]] = []
-        duplicates: List[dict[str, Any]] = []
+        accepted: list[dict[str, Any]] = []
+        duplicates: list[dict[str, Any]] = []
 
         for row in rows:
             content = self._build_content(row, unique_fields)
@@ -91,11 +92,11 @@ class VectorStore:
 
         return accepted, duplicates
 
-    def _encode_text(self, text: str) -> List[float]:
+    def _encode_text(self, text: str) -> list[float]:
         vector = self._embedder.encode(text, convert_to_numpy=True)
         return vector.tolist()
 
-    def _is_duplicate(self, embedding: List[float]) -> bool:
+    def _is_duplicate(self, embedding: list[float]) -> bool:
         with self._lock:
             results = self._collection.query(
                 query_embeddings=[embedding],
@@ -109,7 +110,7 @@ class VectorStore:
                 return True
         return False
 
-    def _add_embedding(self, job_id: str, content: str, embedding: List[float]):
+    def _add_embedding(self, job_id: str, content: str, embedding: list[float]):
         metadata = {"job_id": str(job_id)}
         with self._lock:
             self._collection.add(
