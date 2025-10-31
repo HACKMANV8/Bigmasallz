@@ -104,21 +104,26 @@ function generateTelemetryData(): TelemetrySignal[] {
 
 export default function SynthxAI() {
   // Chat state
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    {
-      id: 1,
-      role: "system",
-      content: "SynthxAI dataset synthesis engine initialized. Ready to generate high-fidelity synthetic data.",
-      timestamp: new Date().toLocaleTimeString(),
-    },
-    {
-      id: 2,
-      role: "agent",
-      content: "Configure your dataset schema in the architect panel, then I'll generate synthetic data that matches your requirements.",
-      timestamp: new Date().toLocaleTimeString(),
-    },
-  ]);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputValue, setInputValue] = useState("");
+
+  // Initialize messages on client-side only to avoid hydration mismatch
+  useEffect(() => {
+    setMessages([
+      {
+        id: 1,
+        role: "system",
+        content: "SynthxAI dataset synthesis engine initialized. Ready to generate high-fidelity synthetic data.",
+        timestamp: new Date().toLocaleTimeString(),
+      },
+      {
+        id: 2,
+        role: "agent",
+        content: "Configure your dataset schema in the architect panel, then I'll generate synthetic data that matches your requirements.",
+        timestamp: new Date().toLocaleTimeString(),
+      },
+    ]);
+  }, []);
 
   // Schema state
   const [datasetName, setDatasetName] = useState("customer_analytics");
