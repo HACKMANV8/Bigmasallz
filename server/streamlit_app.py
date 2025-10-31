@@ -39,7 +39,7 @@ def extract_schema(user_input, context=None, example_data=None):
         response = requests.post(
             f"{API_BASE_URL}/schema/extract",
             json=payload,
-            timeout=60
+            timeout=480  # 2 minutes for schema extraction
         )
         response.raise_for_status()
         return response.json()
@@ -62,7 +62,7 @@ def create_job(schema, total_rows, chunk_size=1000, output_format="csv"):
         response = requests.post(
             f"{API_BASE_URL}/jobs/create",
             json=payload,
-            timeout=10
+            timeout=None  # No timeout - job creation is async
         )
         response.raise_for_status()
         return response.json()
@@ -76,7 +76,7 @@ def get_job_status(job_id):
     try:
         response = requests.get(
             f"{API_BASE_URL}/jobs/{job_id}/status",
-            timeout=5
+            timeout=30  # Longer timeout for status checks
         )
         response.raise_for_status()
         return response.json()
@@ -90,7 +90,7 @@ def get_job_details(job_id):
     try:
         response = requests.get(
             f"{API_BASE_URL}/jobs/{job_id}",
-            timeout=5
+            timeout=30
         )
         response.raise_for_status()
         return response.json()
@@ -106,7 +106,7 @@ def list_jobs(status=None):
         response = requests.get(
             f"{API_BASE_URL}/jobs/",
             params=params,
-            timeout=5
+            timeout=30
         )
         response.raise_for_status()
         return response.json()
@@ -125,7 +125,7 @@ def control_job(job_id, action):
         response = requests.post(
             f"{API_BASE_URL}/jobs/{job_id}/control",
             json=payload,
-            timeout=5
+            timeout=30
         )
         response.raise_for_status()
         return response.json()
@@ -140,7 +140,7 @@ def preview_job_output(job_id, rows=10):
         response = requests.get(
             f"{API_BASE_URL}/jobs/{job_id}/preview",
             params={"rows": rows},
-            timeout=10
+            timeout=60  # Longer timeout for preview
         )
         response.raise_for_status()
         return response.json()
@@ -154,7 +154,7 @@ def download_job_output(job_id):
     try:
         response = requests.get(
             f"{API_BASE_URL}/jobs/{job_id}/download",
-            timeout=30
+            timeout=300  # 5 minutes for large file downloads
         )
         response.raise_for_status()
         return response.content
