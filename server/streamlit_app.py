@@ -304,16 +304,16 @@ def create_dataset_page():
                 min_value=1,
                 max_value=100000,
                 value=1000,
-                step=100
+                step=1
             )
 
         with col2:
             chunk_size = st.number_input(
                 "Chunk Size",
-                min_value=100,
+                min_value=1,
                 max_value=10000,
                 value=1000,
-                step=100
+                step=1
             )
 
         with col3:
