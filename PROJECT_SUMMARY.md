@@ -198,6 +198,7 @@ npm install && npm run dev
 - **Python** 3.11+ (modern Python features)
 - **Pydantic** 2.5+ (data validation)
 - **OpenAI** API (LLM & embeddings)
+- **Google Gemini** API (alternative LLM)
 - **ChromaDB** 0.4+ (vector database)
 - **Uvicorn** (ASGI server)
 

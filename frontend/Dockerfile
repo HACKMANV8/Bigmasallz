@@ -1,52 +1,21 @@
-# Multi-stage build for production-ready Next.js image
+# Streamlit Frontend Dockerfile
 
-# Stage 1: Dependencies
-FROM node:18-alpine AS deps
-RUN apk add --no-cache libc6-compat
+FROM python:3.11-slim
 
 WORKDIR /app
 
 # Install dependencies
-COPY package.json package-lock.json* ./
-RUN npm ci
+COPY requirements.txt .
+RUN pip install  -r requirements.txt
 
-# Stage 2: Builder
-FROM node:18-alpine AS builder
+# Copy application
+COPY app.py .
 
-WORKDIR /app
+# Expose Streamlit port
+EXPOSE 8501
 
-# Copy dependencies
-COPY --from=deps /app/node_modules ./node_modules
-COPY . .
+# Health check
+HEALTHCHECK CMD curl --fail http://localhost:8501/_stcore/health || exit 1
 
-# Set environment variable
-ENV NEXT_PUBLIC_API_URL=http://localhost:8000
-ENV NEXT_TELEMETRY_DISABLED=1
-
-# Build application
-RUN npm run build
-
-# Stage 3: Runner
-FROM node:18-alpine AS runner
-
-WORKDIR /app
-
-ENV NODE_ENV=production
-ENV NEXT_TELEMETRY_DISABLED=1
-
-RUN addgroup --system --gid 1001 nodejs
-RUN adduser --system --uid 1001 nextjs
-
-# Copy necessary files
-COPY --from=builder /app/public ./public
-COPY --from=builder /app/.next/standalone ./
-COPY --from=builder /app/.next/static ./.next/static
-
-USER nextjs
-
-EXPOSE 3000
-
-ENV PORT=3000
-ENV HOSTNAME="0.0.0.0"
-
-CMD ["node", "server.js"]
+# Run Streamlit
+CMD ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0"]

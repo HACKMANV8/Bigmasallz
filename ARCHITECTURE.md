@@ -65,7 +65,7 @@ SynthAIx is a two-phase, scalable platform for generating large volumes of struc
 │  FastMCP Tools & Utilities                                       │
 │  - DeduplicationTool: Vector similarity checking                 │
 │  - VectorStore: ChromaDB wrapper                                 │
-│  - LLMClient: OpenAI/Anthropic API interface                     │
+│  - LLMClient: OpenAI/Google Gemini API interface                 │
 │  - DataValidator: Schema compliance validation                   │
 └───────────────────────────┬─────────────────────────────────────┘
                             │
@@ -207,7 +207,7 @@ class DeduplicationTool:
 #### 5. **Utilities** (`app/utils/`)
 
 **LLMClient**
-- Abstracts OpenAI/Anthropic APIs
+- Abstracts OpenAI/Google Gemini APIs
 - Supports structured output mode (JSON schema enforcement)
 - Handles embeddings generation
 - Retry logic & error handling
@@ -234,7 +234,7 @@ User Input (Natural Language)
     ↓
 [Utility] LLMClient.generate_structured_output()
     ↓ API Call with JSON Schema
-[External] OpenAI/Anthropic LLM
+[External] OpenAI/Google Gemini LLM
     ↓ JSON Response (guaranteed structure)
 [Service] Parse & validate response
     ↓
@@ -539,7 +539,7 @@ If status == 'completed':
 ### Backend
 - **Framework**: FastAPI 0.109+
 - **Language**: Python 3.11+
-- **LLM APIs**: OpenAI, Anthropic
+- **LLM APIs**: OpenAI, Google Gemini
 - **Vector DB**: ChromaDB 0.4+
 - **Async**: asyncio, ThreadPoolExecutor
 - **Validation**: Pydantic 2.5+

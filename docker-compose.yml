@@ -8,11 +8,11 @@ services:
       dockerfile: Dockerfile
     container_name: synthaix-backend
     ports:
-      - "8000:8000"
+      - "8069:8000"
     environment:
       - BACKEND_HOST=0.0.0.0
       - BACKEND_PORT=8000
-      - CORS_ORIGINS=http://localhost:3000
+      - CORS_ORIGINS=http://localhost:8501,http://localhost:8000
       - CHROMADB_PATH=/app/data/chromadb
       - DATABASE_URL=${DATABASE_URL:-}
       - REDIS_URL=${REDIS_URL:-}
@@ -34,24 +34,26 @@ services:
     networks:
       - synthaix-network
 
-  # Next.js Frontend
+  # Streamlit Frontend
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-      args:
-        - NEXT_PUBLIC_API_URL=http://localhost:8000
     container_name: synthaix-frontend
     ports:
-      - "3000:3000"
+      - "8501:8501"
     environment:
-      - NEXT_PUBLIC_API_URL=http://backend:8000
-      - NODE_ENV=production
+      - API_URL=http://backend:8000
     env_file:
       - .env
     depends_on:
       - backend
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
     networks:
       - synthaix-network
 

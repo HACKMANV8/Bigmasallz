@@ -113,7 +113,7 @@ Edit `.env` file:
 ```env
 # LLM Configuration
 OPENAI_API_KEY=sk-your-key-here          # Required
-DEFAULT_LLM_PROVIDER=openai               # openai or anthropic
+DEFAULT_LLM_PROVIDER=openai               # openai or gemini
 DEFAULT_MODEL=gpt-4-turbo-preview         # Model to use
 
 # Generation Settings

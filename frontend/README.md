@@ -1,80 +1,64 @@
-# SynthAIx Frontend
+# Streamlit Frontend
 
-Next.js frontend for the SynthAIx synthetic data generation platform.
+## Description
+
+Production-grade Streamlit frontend for SynthAIx synthetic data generator.
 
 ## Features
 
-- **Natural Language Input**: Describe data in plain English
-- **Schema Editor**: Review and edit AI-inferred schemas
-- **Generation Configuration**: Configure workers, chunk size, and deduplication
-- **Real-time Progress**: Live progress tracking with status updates
-- **Results Viewer**: Preview and download generated data
+- 🎨 Modern, clean UI
+- 📱 Responsive design
+- 🚀 Real-time progress tracking
+- 📊 Data preview
+- 💾 CSV/JSON download
+- ⚡ Fast and lightweight
 
 ## Installation
 
 ```bash
-npm install
+pip install -r requirements.txt
 ```
+
+## Running Locally
+
+```bash
+# Make sure backend is running on port 8000
+streamlit run app.py
+```
+
+The app will be available at http://localhost:8501
 
 ## Configuration
 
-Create a `.env.local` file:
+Create `.streamlit/secrets.toml` for custom API URL:
 
-```env
-NEXT_PUBLIC_API_URL=http://localhost:8000
+```toml
+API_URL = "http://localhost:8000"
 ```
 
-## Running
-
-### Development
-
-```bash
-npm run dev
-```
-
-Visit http://localhost:3000
-
-### Production Build
-
-```bash
-npm run build
-npm start
-```
-
-### Docker
+## Docker
 
 ```bash
 docker build -t synthaix-frontend .
-docker run -p 3000:3000 synthaix-frontend
+docker run -p 8501:8501 synthaix-frontend
 ```
 
-## Project Structure
+## Environment Variables
 
-```
-frontend/
-├── src/
-│   ├── app/              # Next.js 14 App Router
-│   ├── components/       # React components
-│   │   ├── schema/       # Schema-related components
-│   │   ├── generation/   # Generation components
-│   │   └── ui/           # Shared UI components
-│   ├── services/         # API service layer
-│   ├── hooks/            # Custom React hooks
-│   ├── types/            # TypeScript types
-│   └── lib/              # Utilities
-├── public/               # Static assets
-└── tests/                # Test files
-```
+- `API_URL` - Backend API URL (default: http://localhost:8000)
 
-## Technology Stack
+## Usage
 
-- **Framework**: Next.js 14 (App Router)
-- **Language**: TypeScript
-- **Styling**: Tailwind CSS
-- **HTTP Client**: Axios
-- **Forms**: React Hook Form + Zod
-- **Icons**: Lucide React
+1. **Describe**: Enter natural language description of your dataset
+2. **Edit**: Review and modify the generated schema
+3. **Configure**: Set generation parameters (rows, workers, etc.)
+4. **Generate**: Watch real-time progress and download results
 
-## License
+## Advantages over Next.js
 
-MIT License
+- ✅ No npm/node dependencies
+- ✅ Pure Python stack
+- ✅ Faster development
+- ✅ Smaller Docker image
+- ✅ Better for data science workflows
+- ✅ Built-in data visualization

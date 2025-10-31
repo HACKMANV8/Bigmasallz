@@ -17,7 +17,7 @@ RUN apt-get update && apt-get install -y \
 COPY requirements.txt .
 
 # Install Python dependencies
-RUN pip install --no-cache-dir --upgrade pip && \
+RUN pip install --no-cache- p && \
     pip install --no-cache-dir -r requirements.txt
 
 # Stage 2: Runtime

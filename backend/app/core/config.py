@@ -16,16 +16,23 @@ class Settings(BaseSettings):
     BACKEND_HOST: str = "0.0.0.0"
     BACKEND_PORT: int = 8000
 
-    # CORS
-    CORS_ORIGINS: List[str] = ["http://localhost:3000"]
+    # CORS - Accept comma-separated string or list
+    CORS_ORIGINS: str = "http://localhost:8501,http://localhost:8000"
+    
+    @property
+    def cors_origins_list(self) -> List[str]:
+        """Convert CORS_ORIGINS string to list."""
+        if isinstance(self.CORS_ORIGINS, str):
+            return [origin.strip() for origin in self.CORS_ORIGINS.split(",")]
+        return self.CORS_ORIGINS
 
     # LLM Configuration
     OPENAI_API_KEY: str = ""
-    ANTHROPIC_API_KEY: str = ""
+    GOOGLE_API_KEY: str = ""
     DEFAULT_LLM_PROVIDER: str = "openai"
-    DEFAULT_MODEL: str = "gpt-4-turbo-preview"
-    SCHEMA_MODEL: str = "gpt-4-turbo-preview"
-    GENERATION_MODEL: str = "gpt-4-turbo-preview"
+    DEFAULT_MODEL: str = "gpt-4-turbo"
+    SCHEMA_MODEL: str = "gpt-4-turbo"
+    GENERATION_MODEL: str = "gpt-4-turbo"
     LLM_TIMEOUT: int = 60
 
     # Generation Settings

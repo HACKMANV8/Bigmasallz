@@ -189,7 +189,7 @@ pip install -r requirements.txt
 
 # Set environment variables
 export OPENAI_API_KEY="your-key-here"
-export ANTHROPIC_API_KEY="your-key-here"  # Optional
+export GOOGLE_API_KEY="your-key-here"  # Optional for Gemini
 
 # Run the server
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
@@ -333,9 +333,9 @@ Create a `.env` file in the root directory:
 ```env
 # LLM Configuration
 OPENAI_API_KEY=sk-...
-ANTHROPIC_API_KEY=sk-ant-...
+GOOGLE_API_KEY=your-key...
 DEFAULT_LLM_PROVIDER=openai
-DEFAULT_MODEL=gpt-4-turbo-preview
+DEFAULT_MODEL=gpt-4-turbo
 
 # Backend Configuration
 BACKEND_HOST=0.0.0.0
@@ -510,7 +510,7 @@ MIT License - see [LICENSE](LICENSE) file for details.
 - FastAPI for the excellent async framework
 - Next.js for the React framework
 - ChromaDB for vector storage
-- OpenAI/Anthropic for LLM APIs
+- OpenAI/Google Gemini for LLM APIs
 
 ## 📞 Support
 
