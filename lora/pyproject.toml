@@ -1,0 +1,21 @@
+[project]
+name = "hackman-project"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "accelerate>=0.24.0",
+    "bitsandbytes>=0.41.0",
+    "datasets>=2.14.0",
+    "jupyter>=1.1.1",
+    "pandas>=2.0.0",
+    "peft>=0.7.0",
+    "protobuf>=3.20.0",
+    "scipy>=1.11.0",
+    "sentencepiece>=0.1.99",
+    "torch>=2.0.0",
+    "tqdm>=4.66.0",
+    "transformers>=4.35.0",
+    "wandb>=0.15.0",
+]

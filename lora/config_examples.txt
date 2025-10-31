@@ -1,0 +1,76 @@
+# Training Configuration Examples
+# Copy and modify these for different use cases
+
+# Example 1: Quick Test (Fast, for testing)
+# python train_lora.py --csv_path data.csv --num_epochs 1 --batch_size 4
+
+# Example 2: Standard Training (Recommended for hackathon)
+# python train_lora.py \
+#     --csv_path data.csv \
+#     --model_name gpt2 \
+#     --output_dir ./my_model \
+#     --num_epochs 3 \
+#     --batch_size 4 \
+#     --learning_rate 2e-4 \
+#     --lora_r 8 \
+#     --lora_alpha 16
+
+# Example 3: High Quality (More training time)
+# python train_lora.py \
+#     --csv_path data.csv \
+#     --model_name gpt2 \
+#     --output_dir ./high_quality_model \
+#     --num_epochs 5 \
+#     --batch_size 4 \
+#     --learning_rate 2e-4 \
+#     --lora_r 16 \
+#     --lora_alpha 32
+
+# Example 4: Limited GPU Memory
+# python train_lora.py \
+#     --csv_path data.csv \
+#     --use_8bit \
+#     --batch_size 2 \
+#     --gradient_accumulation_steps 8 \
+#     --max_length 256
+
+# Example 5: With Weights & Biases Logging
+# python train_lora.py \
+#     --csv_path data.csv \
+#     --use_wandb \
+#     --num_epochs 3
+
+# Example 6: Larger Model (needs more memory)
+# python train_lora.py \
+#     --csv_path data.csv \
+#     --model_name microsoft/phi-1_5 \
+#     --use_8bit \
+#     --batch_size 2 \
+#     --num_epochs 3
+
+# Parameter Tuning Guide:
+# 
+# num_epochs: 
+#   - 1-2: Quick test
+#   - 3-5: Standard
+#   - 5-10: High quality
+#
+# batch_size:
+#   - 1-2: Limited memory
+#   - 4-8: Standard
+#   - 8-16: Large memory
+#
+# learning_rate:
+#   - 1e-4: Conservative
+#   - 2e-4: Standard (recommended)
+#   - 3e-4: Aggressive
+#
+# lora_r (rank):
+#   - 4: Fast, less quality
+#   - 8: Standard (recommended)
+#   - 16-32: High quality, slower
+#
+# max_length:
+#   - 256: Short texts, less memory
+#   - 512: Standard (recommended)
+#   - 1024: Long texts, more memory

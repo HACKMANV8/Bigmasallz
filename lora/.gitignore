@@ -1,0 +1,65 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Model files and outputs
+lora_finetuned_model/
+lora_model/
+*.bin
+*.safetensors
+*.pt
+*.pth
+checkpoints/
+runs/
+outputs/
+
+# Data
+*.csv
+!sample_dataset.csv
+data/
+datasets/
+
+# Jupyter
+.ipynb_checkpoints
+*.ipynb
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+wandb/
+tensorboard/
+
+# Environment
+.env
+.venv
