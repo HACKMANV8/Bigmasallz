@@ -137,6 +137,16 @@ class JobManager:
             f"{job.progress.progress_percentage:.1f}%)"
         )
 
+    def set_current_chunk(self, job_id: UUID, chunk_id: int | None):
+        """Update the current chunk being processed for a job."""
+        job = self.jobs.get(job_id)
+        if not job:
+            logger.warning(f"Job {job_id} not found for current chunk update")
+            return
+
+        job.progress.current_chunk = chunk_id
+        self._persist_job(job)
+
     def validate_schema(self, job_id: UUID):
         """Mark job schema as validated.
         

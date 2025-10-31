@@ -1,10 +1,13 @@
 """Gemini API client for LLM operations."""
 
 import json
+import re
 import time
+from dataclasses import dataclass
 from typing import Any
 
 import google.generativeai as genai
+from google.api_core import exceptions as google_exceptions
 from google.generativeai.types import GenerationConfig
 from json_repair import repair_json
 from tenacity import retry, stop_after_attempt, wait_exponential
@@ -26,6 +29,18 @@ try:
     from langfuse import Langfuse  # type: ignore[import-not-found]
 except ImportError:  # pragma: no cover - optional dependency
     Langfuse = None
+
+
+@dataclass
+class QuotaExceededError(RuntimeError):
+    """Raised when the Gemini API reports a quota exhaustion."""
+
+    message: str
+    retry_after: float | None = None
+    quota_metric: str | None = None
+
+    def __post_init__(self):
+        super().__init__(self.message)
 
 
 class GeminiClient:
@@ -125,7 +140,8 @@ class GeminiClient:
 
     @retry(
         stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=2, max=10)
+        wait=wait_exponential(multiplier=1, min=2, max=10),
+        reraise=True,
     )
     def _generate_content(self, prompt: str, **kwargs) -> str:
         """Generate content with retry logic.
@@ -161,9 +177,51 @@ class GeminiClient:
                 logger.error("Empty response from Gemini API")
                 raise ValueError("Empty response from Gemini API")
 
+        except google_exceptions.ResourceExhausted as exc:
+            retry_after = self._parse_retry_after(exc)
+            quota_metric = self._parse_quota_metric(exc)
+            logger.error(
+                "Gemini quota exceeded%s",
+                f"; retry after {retry_after}s" if retry_after is not None else "",
+            )
+            raise QuotaExceededError(
+                message=str(exc),
+                retry_after=retry_after,
+                quota_metric=quota_metric,
+            ) from exc
         except Exception as e:
             logger.error(f"Error generating content: {e}")
             raise
+
+    @staticmethod
+    def _parse_retry_after(exc: google_exceptions.ResourceExhausted) -> float | None:
+        """Extract retry-after seconds from a ResourceExhausted exception."""
+        message = str(exc)
+        match = re.search(r"retry in\s+(\d+(?:\.\d+)?)s", message, re.IGNORECASE)
+        if match:
+            try:
+                return float(match.group(1))
+            except ValueError:  # pragma: no cover - defensive
+                return None
+        retry_info = getattr(exc, "retry_error", None)
+        if retry_info and hasattr(retry_info, "details"):
+            delay = retry_info.details.retry_delay  # type: ignore[attr-defined]
+            if getattr(delay, "seconds", None) is not None:
+                return float(delay.seconds)
+        return None
+
+    @staticmethod
+    def _parse_quota_metric(exc: google_exceptions.ResourceExhausted) -> str | None:
+        """Extract quota metric name from the exception message if present."""
+        message = str(exc)
+        match = re.search(
+            r"quota_metric:\s*\"([^\"]+)\"",
+            message,
+            re.IGNORECASE,
+        )
+        if match:
+            return match.group(1)
+        return None
 
     def extract_schema(self, request: SchemaExtractionRequest) -> SchemaExtractionResponse:
         """Extract structured schema from natural language description.

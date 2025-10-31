@@ -21,8 +21,19 @@ def main():
     )
     parser.add_argument(
         "command",
-        choices=["server", "version"],
+        choices=["server", "api", "version"],
         help="Command to execute"
+    )
+    parser.add_argument(
+        "--host",
+        default="0.0.0.0",
+        help="Host interface for API server"
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=8080,
+        help="Port for API server"
     )
 
     args = parser.parse_args()
@@ -30,6 +41,17 @@ def main():
     if args.command == "server":
         logger.info("Starting MCP server...")
         run_mcp_server()
+    elif args.command == "api":
+        import uvicorn
+
+        logger.info("Starting FastAPI server on %s:%s", args.host, args.port)
+        uvicorn.run(
+            "src.api_server.app:app",
+            host=args.host,
+            port=args.port,
+            reload=False,
+            log_level="info",
+        )
     elif args.command == "version":
         from src import __version__
         print(f"Synthetic Dataset Generator v{__version__}")

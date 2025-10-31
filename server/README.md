@@ -1,18 +1,22 @@
 # Synthetic Dataset Generator 🚀
 
-Generate large, realistic datasets using natural language and LLMs (Google Gemini).
+Generate large, realistic datasets using natural language and LLMs (Google Gemini). Serve it as either an MCP tool or a standalone FastAPI backend for the SynthxAI web UI.
 
 ## Quick Start
 
 ```bash
-# 1. Run setup script
-./quickstart.sh
+# 1. Install dependencies (includes pytest & utilities)
+python -m pip install -e .
 
-# 2. Add your Gemini API key to .env
-nano .env
+# 2. Configure Gemini credentials
+cp .env.example .env
+# edit .env and set GEMINI_API_KEY
 
-# 3. Start the server
+# 3a. Start as an MCP server (for tool integrations)
 python main.py server
+
+# 3b. Start the public API (for the Next.js frontend)
+python main.py api --host 0.0.0.0 --port 8080
 ```
 
 ## What It Does
@@ -40,10 +44,10 @@ Describe your dataset in plain English → Get a complete, realistic dataset in 
 
 ## Project Flow
 
-1. **Schema Parsing**: User describes data → LLM extracts structured schema
-2. **Job Setup**: Confirm schema → Set parameters → Create job
-3. **Generation**: Generate in chunks → Store temporarily → Track progress
-4. **Download**: Merge chunks → Export to file → Ready!
+1. **Schema Parsing**: User describes data → LLM extracts a structured schema
+2. **Job Setup**: Confirm schema → Set parameters → Create job (`POST /jobs`)
+3. **Generation**: Background worker generates chunks automatically and updates progress (`GET /jobs/{id}/progress`)
+4. **Download**: Merge chunks (`POST /jobs/{id}/merge`) → Stream the dataset (`GET /jobs/{id}/download`)
 
 ## MCP Tools
 
@@ -55,6 +59,7 @@ Describe your dataset in plain English → Get a complete, realistic dataset in 
 | `get_job_progress` | Check progress |
 | `control_job` | Pause/resume/cancel |
 | `list_jobs` | View all jobs |
+| `run_job` | Trigger background run if auto-start is disabled |
 | `merge_and_download` | Get final dataset |
 | `validate_schema` | Validate schema |
 
@@ -76,6 +81,32 @@ cp .env.example .env
 # Create directories
 mkdir -p temp output logs
 ```
+
+### Configure the Gemini API key
+
+The backend requires a valid Google Gemini API key for both runtime and tests.
+
+1. Copy the example env file and add your key:
+
+    ```bash
+    cp .env.example .env
+    # open .env in your editor and set GEMINI_API_KEY
+    ```
+
+2. Optionally export the key directly in your shell (useful for CI or running tests without a `.env` file):
+
+    ```bash
+    # macOS / Linux (bash/zsh)
+    export GEMINI_API_KEY="your-real-key"
+
+    # PowerShell
+    $env:GEMINI_API_KEY = "your-real-key"
+
+    # Command Prompt
+    set GEMINI_API_KEY=your-real-key
+    ```
+
+    > Tip: when running `pytest`, ensure the environment variable is available to avoid configuration errors.
 
 ## Usage Example
 
@@ -145,11 +176,11 @@ Unique, Nullable, Min/Max values, Min/Max length, Pattern, Enum values, Format
 ## Testing
 
 ```bash
-# Install dev dependencies
-pip install -e ".[dev]"
+# Install dev dependencies (optional if you used python -m pip install -e .)
+python -m pip install -e ".[dev]"
 
 # Run tests
-pytest
+python -m pytest
 
 # Run examples
 python examples/usage_examples.py

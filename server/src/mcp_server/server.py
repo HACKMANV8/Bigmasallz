@@ -14,19 +14,12 @@ from uuid import UUID
 from mcp.server import Server
 from mcp.types import EmbeddedResource, ImageContent, TextContent, Tool
 
-from src.api.gemini_client import get_gemini_client
 from src.config import settings
-from src.core.job_manager import get_job_manager
 from src.core.models import (
     JobControlRequest,
-    JobSpecification,
     JobStatus,
-    OutputFormat,
-    SchemaExtractionRequest,
-    StorageType,
 )
-from src.storage.handlers import get_storage_handler
-from src.storage.vector_store import get_vector_store
+from src.services.generation_service import get_generation_service
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -34,10 +27,8 @@ logger = get_logger(__name__)
 # Initialize MCP server
 app = Server(settings.mcp_server.name)
 
-# Get singleton instances
-job_manager = get_job_manager()
-gemini_client = get_gemini_client()
-storage_handler = get_storage_handler()
+# Shared generation service
+generation_service = get_generation_service()
 
 
 @app.list_tools()
@@ -97,6 +88,11 @@ async def list_tools() -> list[Tool]:
                         "enum": ["csv", "json", "parquet"],
                         "description": "Output file format"
                     },
+                    "storage_type": {
+                        "type": "string",
+                        "enum": ["disk", "memory", "cloud"],
+                        "description": "Optional storage backend override"
+                    },
                     "uniqueness_fields": {
                         "type": "array",
                         "items": {"type": "string"},
@@ -105,6 +101,22 @@ async def list_tools() -> list[Tool]:
                     "seed": {
                         "type": "integer",
                         "description": "Random seed for reproducibility"
+                    },
+                    "name": {
+                        "type": "string",
+                        "description": "Optional human-friendly job name"
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Optional description for the job"
+                    },
+                    "created_by": {
+                        "type": "string",
+                        "description": "Identifier for the user or agent creating the job"
+                    },
+                    "metadata": {
+                        "type": "object",
+                        "description": "Additional metadata to persist with the job"
                     }
                 },
                 "required": ["schema", "total_rows"]
@@ -265,14 +277,11 @@ async def handle_extract_schema(arguments: dict[str, Any]) -> list[TextContent]:
     """Handle schema extraction from natural language."""
     logger.info("Extracting schema from user input")
 
-    request = SchemaExtractionRequest(
+    response = generation_service.extract_schema_from_prompt(
         user_input=arguments["user_input"],
         context=arguments.get("context"),
-        example_data=arguments.get("example_data")
+        example_data=arguments.get("example_data"),
     )
-
-    # Use Gemini to extract schema
-    response = gemini_client.extract_schema(request)
 
     # Format response
     result = {
@@ -293,53 +302,29 @@ async def handle_create_job(arguments: dict[str, Any]) -> list[TextContent]:
     """Handle job creation."""
     logger.info("Creating new data generation job")
 
-    from src.core.models import DataSchema, FieldConstraint, FieldDefinition, FieldType
-
-    # Parse schema
-    schema_data = arguments["schema"]
-    fields = []
-    for field_data in schema_data["fields"]:
-        constraints = FieldConstraint(**field_data.get("constraints", {}))
-        field = FieldDefinition(
-            name=field_data["name"],
-            type=FieldType(field_data["type"]),
-            description=field_data.get("description"),
-            constraints=constraints,
-            sample_values=field_data.get("sample_values", []),
-            depends_on=field_data.get("depends_on"),
-            generation_hint=field_data.get("generation_hint")
-        )
-        fields.append(field)
-
-    schema = DataSchema(
-        fields=fields,
-        description=schema_data.get("description"),
-        relationships=schema_data.get("relationships"),
-        metadata=schema_data.get("metadata", {})
-    )
-
-    # Create job specification
-    spec = JobSpecification(
-        schema=schema,
+    job_state = generation_service.create_generation_job(
+        schema=arguments["schema"],
         total_rows=arguments["total_rows"],
-        chunk_size=arguments.get("chunk_size", settings.generation.default_chunk_size),
-        output_format=OutputFormat(arguments.get("output_format", "csv")),
-        storage_type=StorageType(settings.storage.type),
-        uniqueness_fields=arguments.get("uniqueness_fields", []),
-        seed=arguments.get("seed")
+        chunk_size=arguments.get("chunk_size"),
+        output_format=arguments.get("output_format"),
+        uniqueness_fields=arguments.get("uniqueness_fields"),
+        seed=arguments.get("seed"),
+        name=arguments.get("name"),
+        description=arguments.get("description"),
+        created_by=arguments.get("created_by"),
+        metadata=arguments.get("metadata"),
+        storage_type=arguments.get("storage_type"),
     )
-
-    # Create job
-    job_state = job_manager.create_job(spec)
-    job_manager.validate_schema(job_state.specification.job_id)
 
     import json
     result = {
         "job_id": str(job_state.specification.job_id),
-        "total_rows": spec.total_rows,
-        "chunk_size": spec.chunk_size,
+        "total_rows": job_state.specification.total_rows,
+        "chunk_size": job_state.specification.chunk_size,
         "total_chunks": job_state.progress.total_chunks,
         "status": job_state.progress.status.value,
+        "output_format": job_state.specification.output_format.value,
+        "storage_type": job_state.specification.storage_type.value,
         "message": "Job created successfully. Use generate_chunk to start generating data."
     }
 
@@ -355,129 +340,26 @@ async def handle_generate_chunk(arguments: dict[str, Any]) -> list[TextContent]:
     chunk_id = arguments["chunk_id"]
 
     logger.info(f"Generating chunk {chunk_id} for job {job_id}")
-
-    # Get job
-    job = job_manager.get_job(job_id)
-    if not job:
-        return [TextContent(type="text", text=f"Job {job_id} not found")]
-
-    # Update status if this is the first chunk
-    if job.progress.status == JobStatus.PENDING:
-        job_manager.update_job_status(job_id, JobStatus.GENERATING)
-
-    # Calculate rows for this chunk
-    remaining_rows = job.specification.total_rows - job.progress.rows_generated
-    chunk_rows = min(job.specification.chunk_size, remaining_rows)
-
-    # Collect existing values for uniqueness
-    existing_values = {}
-    if job.specification.uniqueness_fields:
-        for field_name in job.specification.uniqueness_fields:
-            existing_values[field_name] = []
-            # TODO: Collect existing values from previous chunks
-
-    vector_store = None
-    if settings.vector_store.enabled:
-        try:
-            vector_store = get_vector_store()
-        except Exception as exc:
-            logger.error("Failed to initialise vector store: %s", exc)
-
     try:
-        unique_fields = job.specification.uniqueness_fields
-        if vector_store and not unique_fields:
-            unique_fields = [
-                field.name
-                for field in job.specification.schema.fields
-                if field.constraints.unique
-            ]
-
-        max_attempts = settings.vector_store.max_retry_attempts if vector_store else 1
-        attempts = 0
-        deduped_rows: list[dict[str, Any]] = []
-        duplicates_total = 0
-
-        while len(deduped_rows) < chunk_rows and attempts < max_attempts:
-            attempts += 1
-            rows_needed = chunk_rows - len(deduped_rows)
-
-            batch = gemini_client.generate_data_chunk(
-                schema=job.specification.schema,
-                num_rows=rows_needed,
-                existing_values=existing_values if existing_values else None,
-                seed=job.specification.seed
-            )
-
-            if vector_store and batch:
-                batch, duplicates = vector_store.filter_new_rows(
-                    job_id=str(job_id),
-                    rows=batch,
-                    unique_fields=unique_fields,
-                )
-                duplicates_total += len(duplicates)
-
-            deduped_rows.extend(batch)
-
-            if not batch:
-                logger.debug(
-                    "Job %s: attempt %s yielded no new rows (chunk %s)",
-                    job_id,
-                    attempts,
-                    chunk_id,
-                )
-                if not vector_store:
-                    break
-
-        data = deduped_rows
-
-        if vector_store and duplicates_total:
-            logger.info(
-                "Job %s: removed %s duplicate rows before storage",
-                job_id,
-                duplicates_total,
-            )
-
-        if not data:
-            logger.warning(
-                "Job %s: chunk %s produced no new rows after deduplication",
-                job_id,
-                chunk_id,
-            )
-            return [TextContent(
-                type="text",
-                text=(
-                    "No new rows generated for this chunk after deduplication. "
-                    "Consider reducing chunk size or adjusting uniqueness constraints."
-                ),
-            )]
-
-        # Store chunk
-        metadata = storage_handler.store_chunk(
-            job_id=job_id,
-            chunk_id=chunk_id,
-            data=data,
-            format=job.specification.output_format
-        )
-
-        # Update job progress
-        job_manager.add_chunk(job_id, metadata)
-
-        # Check if job is complete
-        if job.progress.chunks_completed >= job.progress.total_chunks:
-            job_manager.update_job_status(job_id, JobStatus.COMPLETED)
+        response = generation_service.generate_chunk(job_id=job_id, chunk_id=chunk_id)
+        job = generation_service.get_job(job_id)
+        if not job:
+            raise RuntimeError(f"Job {job_id} missing after chunk generation")
 
         import json
         result = {
             "chunk_id": chunk_id,
-            "rows_generated": len(data),
+            "rows_generated": response.rows_generated,
+            "issues": response.issues,
+            "chunk_metadata": response.metadata.model_dump(mode="json"),
             "job_progress": {
                 "chunks_completed": job.progress.chunks_completed,
                 "total_chunks": job.progress.total_chunks,
                 "rows_generated": job.progress.rows_generated,
                 "total_rows": job.specification.total_rows,
                 "progress_percentage": job.progress.progress_percentage,
-                "status": job.progress.status.value
-            }
+                "status": job.progress.status.value,
+            },
         }
 
         return [TextContent(
@@ -487,7 +369,6 @@ async def handle_generate_chunk(arguments: dict[str, Any]) -> list[TextContent]:
 
     except Exception as e:
         logger.error(f"Error generating chunk: {e}")
-        job_manager.update_job_status(job_id, JobStatus.FAILED, str(e))
         return [TextContent(type="text", text=f"Error generating chunk: {str(e)}")]
 
 
@@ -495,7 +376,7 @@ async def handle_get_job_progress(arguments: dict[str, Any]) -> list[TextContent
     """Handle job progress query."""
     job_id = UUID(arguments["job_id"])
 
-    job = job_manager.get_job(job_id)
+    job = generation_service.get_job(job_id)
     if not job:
         return [TextContent(type="text", text=f"Job {job_id} not found")]
 
@@ -531,7 +412,7 @@ async def handle_control_job(arguments: dict[str, Any]) -> list[TextContent]:
         reason=reason
     )
 
-    success = job_manager.control_job(request)
+    success = generation_service.control_job(request)
 
     if success:
         return [TextContent(
@@ -551,7 +432,7 @@ async def handle_list_jobs(arguments: dict[str, Any]) -> list[TextContent]:
     status = JobStatus(status_str) if status_str else None
     limit = arguments.get("limit", 100)
 
-    jobs = job_manager.list_jobs(status=status, limit=limit)
+    jobs = generation_service.list_jobs(status=status, limit=limit)
 
     import json
     result = {
@@ -579,42 +460,24 @@ async def handle_merge_and_download(arguments: dict[str, Any]) -> list[TextConte
     """Handle dataset merging and download preparation."""
     job_id = UUID(arguments["job_id"])
 
-    job = job_manager.get_job(job_id)
-    if not job:
-        return [TextContent(type="text", text=f"Job {job_id} not found")]
-
-    if job.progress.status != JobStatus.COMPLETED:
-        return [TextContent(
-            type="text",
-            text=f"Job {job_id} is not completed yet (status: {job.progress.status.value})"
-        )]
-
-    # Merge chunks
-    output_path = settings.storage.output_path / f"{job_id}.{job.specification.output_format.value}"
-    merged_path = storage_handler.merge_chunks(
-        job_id=job_id,
-        chunks=job.chunks,
-        output_path=output_path,
-        format=job.specification.output_format
-    )
-
-    # Calculate file size and checksum
-    import hashlib
-    file_size = merged_path.stat().st_size
-
-    with open(merged_path, 'rb') as f:
-        checksum = hashlib.sha256(f.read()).hexdigest()
+    try:
+        download_info = generation_service.merge_job_dataset(job_id)
+    except ValueError as exc:
+        return [TextContent(type="text", text=str(exc))]
 
     import json
     result = {
-        "job_id": str(job_id),
-        "file_path": str(merged_path),
-        "file_size_bytes": file_size,
-        "file_size_mb": round(file_size / (1024 * 1024), 2),
-        "format": job.specification.output_format.value,
-        "total_rows": job.progress.rows_generated,
-        "checksum": checksum,
-        "message": f"Dataset ready for download at: {merged_path}"
+        "job_id": str(download_info.job_id),
+        "file_path": download_info.file_path,
+        "file_size_bytes": download_info.file_size_bytes,
+        "file_size_mb": round(download_info.file_size_bytes / (1024 * 1024), 2)
+        if download_info.file_size_bytes is not None
+        else None,
+        "format": download_info.format.value,
+        "total_rows": download_info.total_rows,
+        "checksum": download_info.checksum,
+        "download_url": download_info.download_url,
+        "message": f"Dataset ready for download at: {download_info.file_path}",
     }
 
     return [TextContent(
@@ -625,34 +488,7 @@ async def handle_merge_and_download(arguments: dict[str, Any]) -> list[TextConte
 
 async def handle_validate_schema(arguments: dict[str, Any]) -> list[TextContent]:
     """Handle schema validation."""
-    from src.core.models import DataSchema, FieldConstraint, FieldDefinition, FieldType
-
-    schema_data = arguments["schema"]
-
-    # Parse schema
-    fields = []
-    for field_data in schema_data["fields"]:
-        constraints = FieldConstraint(**field_data.get("constraints", {}))
-        field = FieldDefinition(
-            name=field_data["name"],
-            type=FieldType(field_data["type"]),
-            description=field_data.get("description"),
-            constraints=constraints,
-            sample_values=field_data.get("sample_values", []),
-            depends_on=field_data.get("depends_on"),
-            generation_hint=field_data.get("generation_hint")
-        )
-        fields.append(field)
-
-    schema = DataSchema(
-        fields=fields,
-        description=schema_data.get("description"),
-        relationships=schema_data.get("relationships"),
-        metadata=schema_data.get("metadata", {})
-    )
-
-    # Validate
-    issues = schema.validate_constraints()
+    issues = generation_service.validate_schema(arguments["schema"])
 
     import json
     if issues:
@@ -664,7 +500,7 @@ async def handle_validate_schema(arguments: dict[str, Any]) -> list[TextContent]
         result = {
             "valid": True,
             "message": "Schema is valid",
-            "field_count": len(schema.fields)
+            "field_count": len(arguments["schema"].get("fields", []))
         }
 
     return [TextContent(

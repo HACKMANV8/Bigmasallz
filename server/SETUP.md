@@ -71,6 +71,18 @@ nano .env  # or use your preferred editor
 GEMINI_API_KEY=your_actual_api_key_here
 ```
 
+On Windows you can set the key for the current PowerShell session with:
+
+```powershell
+$env:GEMINI_API_KEY = "your_actual_api_key_here"
+```
+
+Or for classic Command Prompt:
+
+```cmd
+set GEMINI_API_KEY=your_actual_api_key_here
+```
+
 **Optional Configuration:**
 ```bash
 # Adjust these based on your needs
