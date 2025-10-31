@@ -6,6 +6,7 @@ from typing import Any
 
 import google.generativeai as genai
 from google.generativeai.types import GenerationConfig
+from json_repair import repair_json
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from src.config import settings
@@ -20,6 +21,11 @@ from src.core.models import (
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
+
+try:
+    from langfuse import Langfuse  # type: ignore[import-not-found]
+except ImportError:  # pragma: no cover - optional dependency
+    Langfuse = None
 
 
 class GeminiClient:
@@ -43,6 +49,8 @@ class GeminiClient:
         self.tokens_per_minute = settings.rate_limit_tokens_per_minute
         self.request_times: list[float] = []
 
+        self._langfuse_client = self._init_langfuse()
+
         logger.info(f"Initialized Gemini client with model: {self.model_name}")
 
     def _check_rate_limit(self):
@@ -59,6 +67,61 @@ class GeminiClient:
                 self.request_times = []
 
         self.request_times.append(current_time)
+
+    def _init_langfuse(self):
+        """Initialise Langfuse telemetry client if configured."""
+        config = settings.langfuse
+
+        if not config.enabled:
+            logger.debug("Langfuse telemetry disabled by configuration")
+            return None
+
+        if Langfuse is None:
+            logger.warning(
+                "Langfuse telemetry enabled but 'langfuse' package is not installed"
+            )
+            return None
+
+        try:
+            init_kwargs: dict[str, Any] = {
+                "public_key": config.public_key,
+                "secret_key": config.secret_key,
+            }
+            if config.base_url:
+                init_kwargs["host"] = config.base_url
+
+            client = Langfuse(**init_kwargs)
+            if not hasattr(client, "trace"):
+                logger.warning(
+                    "Langfuse client does not expose 'trace'; telemetry will be disabled"
+                )
+                return None
+
+            logger.info("Langfuse telemetry enabled")
+            return client
+        except Exception as exc:  # pragma: no cover - defensive logging
+            logger.error(f"Failed to initialise Langfuse telemetry: {exc}")
+            return None
+
+    def _start_trace(self, name: str, inputs: dict[str, Any] | None = None):
+        """Create a Langfuse trace if telemetry is enabled."""
+        if not self._langfuse_client:
+            return None
+
+        try:
+            trace_callable = getattr(self._langfuse_client, "trace", None)
+            if not callable(trace_callable):
+                return None
+
+            trace = trace_callable(
+                name=name,
+                input=inputs,
+                metadata={"model": self.model_name},
+            )
+            return trace
+        except Exception as exc:  # pragma: no cover - telemetry should not break core flow
+            logger.warning(f"Unable to start Langfuse trace '{name}': {exc}")
+            return None
 
     @retry(
         stop=stop_after_attempt(3),
@@ -114,10 +177,22 @@ class GeminiClient:
         logger.info(f"Extracting schema from user input: {request.user_input[:100]}...")
 
         prompt = self._build_schema_extraction_prompt(request)
-        response_text = self._generate_content(prompt, temperature=0.3)
+        trace = self._start_trace(
+            name="gemini.extract_schema",
+            inputs={
+                "prompt": prompt,
+                "user_input_preview": request.user_input[:200],
+                "has_context": bool(request.context),
+                "has_example_data": bool(request.example_data),
+            },
+        )
+
+        response_text: str | None = None
 
         # Parse JSON response
         try:
+            response_text = self._generate_content(prompt, temperature=0.3)
+
             # Extract JSON from markdown code blocks if present
             if "```json" in response_text:
                 json_start = response_text.find("```json") + 7
@@ -147,35 +222,69 @@ class GeminiClient:
                     default=constraint_data.get("default")
                 )
 
+                # Normalize depends_on to list[str] if needed
+                depends_on_raw = field_data.get("depends_on")
+                depends_on = self._normalize_depends_on(depends_on_raw)
+                
                 field = FieldDefinition(
                     name=field_data["name"],
                     type=FieldType(field_data["type"]),
                     description=field_data.get("description"),
                     constraints=constraints,
                     sample_values=field_data.get("sample_values", []),
-                    depends_on=field_data.get("depends_on"),
+                    depends_on=depends_on,
                     generation_hint=field_data.get("generation_hint")
                 )
                 fields.append(field)
 
+            relationships = self._normalize_relationships(schema_data.get("relationships"))
+
             schema = DataSchema(
                 fields=fields,
                 description=schema_data.get("description"),
-                relationships=schema_data.get("relationships"),
+                relationships=relationships,
                 metadata=schema_data.get("metadata", {})
             )
 
-            return SchemaExtractionResponse(
+            result = SchemaExtractionResponse(
                 schema=schema,
                 confidence=schema_data.get("confidence", 0.85),
                 suggestions=schema_data.get("suggestions", []),
                 warnings=schema_data.get("warnings", [])
             )
 
+            if trace:
+                output_payload: dict[str, Any] = {
+                    "confidence": result.confidence,
+                    "field_count": len(schema.fields),
+                    "field_names": [field.name for field in schema.fields],
+                }
+                if result.warnings:
+                    output_payload["warnings"] = result.warnings
+                if result.suggestions:
+                    output_payload["suggestions"] = result.suggestions[:3]
+                trace.end(
+                    output=output_payload
+                )
+
+            return result
+
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse schema JSON: {e}")
             logger.debug(f"Response text: {response_text}")
+            if trace:
+                metadata: dict[str, Any] = {}
+                if response_text:
+                    metadata["raw_response_preview"] = response_text[:500]
+                trace.end(error=str(e), metadata=metadata or None)
             raise ValueError(f"Failed to parse schema from LLM response: {e}")
+        except Exception as exc:
+            if trace:
+                metadata: dict[str, Any] = {}
+                if response_text:
+                    metadata["raw_response_preview"] = response_text[:500]
+                trace.end(error=str(exc), metadata=metadata or None)
+            raise
 
     def generate_data_chunk(
         self,
@@ -198,10 +307,25 @@ class GeminiClient:
         logger.info(f"Generating {num_rows} rows of data")
 
         prompt = self._build_data_generation_prompt(schema, num_rows, existing_values, seed)
-        response_text = self._generate_content(prompt, temperature=0.8)
+        trace = self._start_trace(
+            name="gemini.generate_data_chunk",
+            inputs={
+                "prompt": prompt,
+                "num_rows": num_rows,
+                "seed": seed,
+                "field_names": [field.name for field in schema.fields],
+                "existing_value_counts": {
+                    key: len(values) for key, values in (existing_values or {}).items()
+                },
+            },
+        )
+
+        response_text: str | None = None
 
         # Parse JSON response
         try:
+            response_text = self._generate_content(prompt, temperature=0.8)
+
             # Extract JSON from markdown code blocks if present
             if "```json" in response_text:
                 json_start = response_text.find("```json") + 7
@@ -212,18 +336,51 @@ class GeminiClient:
                 json_end = response_text.find("```", json_start)
                 response_text = response_text[json_start:json_end].strip()
 
-            data = json.loads(response_text)
+            # Try parsing as-is first
+            try:
+                data = json.loads(response_text)
+            except json.JSONDecodeError as parse_error:
+                # Attempt repair for truncated/malformed JSON
+                logger.warning(f"Initial JSON parse failed: {parse_error}. Attempting repair...")
+                try:
+                    repaired_text = repair_json(response_text)
+                    data = json.loads(repaired_text)
+                    logger.info("Successfully repaired malformed JSON")
+                except Exception as repair_error:
+                    logger.error(f"JSON repair also failed: {repair_error}")
+                    raise parse_error  # Re-raise original error
 
             # Handle both array and object with "data" key
             if isinstance(data, dict) and "data" in data:
                 data = data["data"]
+
+            if trace:
+                preview_count = min(3, len(data))
+                trace.end(
+                    output={
+                        "rows_generated": len(data),
+                        "preview": data[:preview_count],
+                    }
+                )
 
             return data
 
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse data JSON: {e}")
             logger.debug(f"Response text: {response_text[:500]}...")
+            if trace:
+                metadata: dict[str, Any] = {}
+                if response_text:
+                    metadata["raw_response_preview"] = response_text[:500]
+                trace.end(error=str(e), metadata=metadata or None)
             raise ValueError(f"Failed to parse data from LLM response: {e}")
+        except Exception as exc:
+            if trace:
+                metadata: dict[str, Any] = {}
+                if response_text:
+                    metadata["raw_response_preview"] = response_text[:500]
+                trace.end(error=str(exc), metadata=metadata or None)
+            raise
 
     def _build_schema_extraction_prompt(self, request: SchemaExtractionRequest) -> str:
         """Build prompt for schema extraction."""
@@ -352,6 +509,44 @@ Example output format:
 Return ONLY the JSON array, no additional text or explanations.
 """
         return prompt
+
+    def _normalize_relationships(self, relationships_data: Any) -> dict[str, list[str]] | None:
+        """Coerce LLM-provided relationship info into expected structure."""
+        if not isinstance(relationships_data, dict):
+            return None
+
+        normalized: dict[str, list[str]] = {}
+        for key, value in relationships_data.items():
+            str_key = str(key)
+            values_list = self._coerce_relationship_values(value)
+            if values_list:
+                normalized[str_key] = values_list
+
+        return normalized or None
+
+    @staticmethod
+    def _coerce_relationship_values(value: Any) -> list[str] | None:
+        if value is None:
+            return None
+        if isinstance(value, list):
+            return [json.dumps(item) if isinstance(item, (dict, list)) else str(item) for item in value]
+        if isinstance(value, dict):
+            return [json.dumps(value)]
+        return [str(value)]
+
+    @staticmethod
+    def _normalize_depends_on(depends_on_data: Any) -> list[str] | None:
+        """Coerce LLM-provided depends_on field into expected list[str] structure."""
+        if depends_on_data is None:
+            return None
+        if isinstance(depends_on_data, list):
+            # Already a list, ensure all items are strings
+            return [str(item) for item in depends_on_data]
+        if isinstance(depends_on_data, str):
+            # Single string, wrap in list
+            return [depends_on_data]
+        # For other types (int, dict, etc.), convert to string and wrap
+        return [str(depends_on_data)]
 
 
 # Global client instance

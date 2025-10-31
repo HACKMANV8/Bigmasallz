@@ -20,6 +20,7 @@ sdist/
 var/
 .installed.cfg
 *.egg
+.ruff_cache
 
 # Virtual environments
 .venv

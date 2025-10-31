@@ -26,6 +26,7 @@ from src.core.models import (
     StorageType,
 )
 from src.storage.handlers import get_storage_handler
+from src.storage.vector_store import get_vector_store
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -375,14 +376,80 @@ async def handle_generate_chunk(arguments: dict[str, Any]) -> list[TextContent]:
             existing_values[field_name] = []
             # TODO: Collect existing values from previous chunks
 
+    vector_store = None
+    if settings.vector_store.enabled:
+        try:
+            vector_store = get_vector_store()
+        except Exception as exc:
+            logger.error("Failed to initialise vector store: %s", exc)
+
     try:
-        # Generate data using Gemini
-        data = gemini_client.generate_data_chunk(
-            schema=job.specification.schema,
-            num_rows=chunk_rows,
-            existing_values=existing_values if existing_values else None,
-            seed=job.specification.seed
-        )
+        unique_fields = job.specification.uniqueness_fields
+        if vector_store and not unique_fields:
+            unique_fields = [
+                field.name
+                for field in job.specification.schema.fields
+                if field.constraints.unique
+            ]
+
+        max_attempts = settings.vector_store.max_retry_attempts if vector_store else 1
+        attempts = 0
+        deduped_rows: list[dict[str, Any]] = []
+        duplicates_total = 0
+
+        while len(deduped_rows) < chunk_rows and attempts < max_attempts:
+            attempts += 1
+            rows_needed = chunk_rows - len(deduped_rows)
+
+            batch = gemini_client.generate_data_chunk(
+                schema=job.specification.schema,
+                num_rows=rows_needed,
+                existing_values=existing_values if existing_values else None,
+                seed=job.specification.seed
+            )
+
+            if vector_store and batch:
+                batch, duplicates = vector_store.filter_new_rows(
+                    job_id=str(job_id),
+                    rows=batch,
+                    unique_fields=unique_fields,
+                )
+                duplicates_total += len(duplicates)
+
+            deduped_rows.extend(batch)
+
+            if not batch:
+                logger.debug(
+                    "Job %s: attempt %s yielded no new rows (chunk %s)",
+                    job_id,
+                    attempts,
+                    chunk_id,
+                )
+                if not vector_store:
+                    break
+
+        data = deduped_rows
+
+        if vector_store and duplicates_total:
+            logger.info(
+                "Job %s: removed %s duplicate rows before storage",
+                job_id,
+                duplicates_total,
+            )
+
+        if not data:
+            logger.warning(
+                "Job %s: chunk %s produced no new rows after deduplication",
+                job_id,
+                chunk_id,
+            )
+            return [TextContent(
+                type="text",
+                text=(
+                    "No new rows generated for this chunk after deduplication. "
+                    "Consider reducing chunk size or adjusting uniqueness constraints."
+                ),
+            )]
 
         # Store chunk
         metadata = storage_handler.store_chunk(
