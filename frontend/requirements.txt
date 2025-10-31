@@ -1,0 +1,18 @@
+# Streamlit Frontend Dependencies
+# Core Framework
+streamlit==1.28.2
+
+# HTTP Client
+requests==2.31.0
+httpx==0.25.2
+
+# Data Visualization
+plotly==5.18.0
+pandas==2.1.4
+
+# UI Components
+streamlit-option-menu==0.3.6
+streamlit-lottie==0.0.5
+
+# Utilities
+python-dotenv==1.0.0

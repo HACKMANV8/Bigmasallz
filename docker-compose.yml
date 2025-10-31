@@ -1,0 +1,96 @@
+version: '3.8'
+
+services:
+  # Redis - Job state management
+  redis:
+    image: redis:7.2-alpine
+    container_name: synthaix-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - synthaix-network
+    restart: unless-stopped
+
+  # Backend API
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: synthaix-backend
+    ports:
+      - "8000:8000"
+    environment:
+      # Application
+      - DEBUG=False
+      - LOG_LEVEL=INFO
+      
+      # OpenAI Configuration (set these before running)
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_MODEL=gpt-4o-mini
+      
+      # Redis
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      
+      # ChromaDB
+      - CHROMA_PERSIST_DIR=/app/data/chroma_db
+      
+      # Workers
+      - MAX_WORKERS=20
+    volumes:
+      - chroma_data:/app/data/chroma_db
+      - ./backend/app:/app/app  # Mount for development
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - synthaix-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # Frontend UI
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: synthaix-frontend
+    ports:
+      - "8501:8501"
+    environment:
+      - BACKEND_URL=http://backend:8000
+    volumes:
+      - ./frontend:/app  # Mount for development
+    depends_on:
+      - backend
+    networks:
+      - synthaix-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+networks:
+  synthaix-network:
+    driver: bridge
+
+volumes:
+  redis_data:
+    driver: local
+  chroma_data:
+    driver: local
