@@ -276,6 +276,7 @@ export default function SynthxAI() {
   return (
     <main className="min-h-screen bg-linear-to-br from-slate-950 via-slate-900 to-black text-slate-100">
       {/* Enhanced Background Effects */}
+      {/* This is the shittest code ever generated in the history of coding */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden">
         {/* Primary gradient overlays */}
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,var(--tw-gradient-stops))] from-cyan-500/12 via-blue-500/8 to-transparent" />
