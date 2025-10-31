@@ -169,6 +169,8 @@ On CPU (not recommended but possible):
 python train_lora.py --csv_path data.csv --batch_size 2
 python train_lora.py --csv_path data.csv --batch_size 1 --use_8bit
 python train_lora.py --csv_path data.csv --batch_size 1 --use_8bit --max_length 256
+
+python train_lora.py --csv_path /home/dikshith/Hackman-Main/Bigmasallz/server/output/cc07384b-a53d-47a7-8796-0f5812a2c18a.csv --use_8bit --batch_size 2 --num_epochs 3
 ```
 
 **Model not generating well:**
