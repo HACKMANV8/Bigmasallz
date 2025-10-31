@@ -31,6 +31,7 @@ from src.core.models import (
     StorageType,
 )
 from src.storage.handlers import get_storage_handler
+from src.storage.vector_store import get_vector_store
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -166,6 +167,13 @@ def main() -> int:
 
     storage_handler = get_storage_handler(storage_type.value)
 
+    vector_store = None
+    if settings.vector_store.enabled:
+        try:
+            vector_store = get_vector_store()
+        except Exception as exc:
+            logger.error("Failed to initialise vector store: %s", exc)
+
     job_manager.update_job_status(job_state.specification.job_id, JobStatus.GENERATING)
 
     unique_fields = [field.name for field in schema.fields if field.constraints.unique]
@@ -183,12 +191,54 @@ def main() -> int:
             break
 
         logger.info("Generating chunk %s (%s rows)...", chunk_idx, chunk_rows)
-        data = client.generate_data_chunk(
-            schema=schema,
-            num_rows=chunk_rows,
-            existing_values=existing_values or None,
-            seed=job.specification.seed,
-        )
+        max_attempts = settings.vector_store.max_retry_attempts if vector_store else 1
+        attempt = 0
+        deduped_rows: list[dict[str, Any]] = []
+        duplicates_total = 0
+
+        unique_fields = job_spec.uniqueness_fields or [
+            field.name for field in schema.fields if field.constraints.unique
+        ]
+
+        while len(deduped_rows) < chunk_rows and attempt < max_attempts:
+            attempt += 1
+            rows_needed = chunk_rows - len(deduped_rows)
+            batch = client.generate_data_chunk(
+                schema=schema,
+                num_rows=rows_needed,
+                existing_values=existing_values or None,
+                seed=job.specification.seed,
+            )
+
+            if vector_store and batch:
+                batch, duplicates = vector_store.filter_new_rows(
+                    job_id=str(job_state.specification.job_id),
+                    rows=batch,
+                    unique_fields=unique_fields,
+                )
+                duplicates_total += len(duplicates)
+
+            deduped_rows.extend(batch)
+
+            if not batch:
+                print(
+                    f"    attempt {attempt} yielded no new rows after deduplication",
+                    flush=True,
+                )
+                if not vector_store:
+                    break
+
+        if vector_store and duplicates_total:
+            print(f"    removed {duplicates_total} duplicate rows via vector store", flush=True)
+
+        data = deduped_rows
+
+        if not data:
+            print(
+                "  ⚠ Skipping chunk because no new rows were generated after deduplication.",
+                flush=True,
+            )
+            continue
 
         for field in unique_fields:
             existing_values[field].extend(

@@ -232,10 +232,12 @@ class GeminiClient:
                 )
                 fields.append(field)
 
+            relationships = self._normalize_relationships(schema_data.get("relationships"))
+
             schema = DataSchema(
                 fields=fields,
                 description=schema_data.get("description"),
-                relationships=schema_data.get("relationships"),
+                relationships=relationships,
                 metadata=schema_data.get("metadata", {})
             )
 
@@ -490,6 +492,30 @@ Example output format:
 Return ONLY the JSON array, no additional text or explanations.
 """
         return prompt
+
+    def _normalize_relationships(self, relationships_data: Any) -> dict[str, list[str]] | None:
+        """Coerce LLM-provided relationship info into expected structure."""
+        if not isinstance(relationships_data, dict):
+            return None
+
+        normalized: dict[str, list[str]] = {}
+        for key, value in relationships_data.items():
+            str_key = str(key)
+            values_list = self._coerce_relationship_values(value)
+            if values_list:
+                normalized[str_key] = values_list
+
+        return normalized or None
+
+    @staticmethod
+    def _coerce_relationship_values(value: Any) -> list[str] | None:
+        if value is None:
+            return None
+        if isinstance(value, list):
+            return [json.dumps(item) if isinstance(item, (dict, list)) else str(item) for item in value]
+        if isinstance(value, dict):
+            return [json.dumps(value)]
+        return [str(value)]
 
 
 # Global client instance

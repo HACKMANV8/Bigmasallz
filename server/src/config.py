@@ -62,6 +62,16 @@ class RateLimitConfig(BaseModel):
     tokens_per_minute: int = 50000
 
 
+class VectorStoreConfig(BaseModel):
+    """Vector store configuration."""
+    enabled: bool = False
+    persist_path: Path = Path("./vector_store")
+    collection_name: str = "dataset_rows"
+    embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
+    similarity_threshold: float = 0.2
+    max_retry_attempts: int = 3
+
+
 class LangfuseConfig(BaseModel):
     """Langfuse telemetry configuration."""
     enabled: bool = False
@@ -129,6 +139,14 @@ class Settings(BaseSettings):
     langfuse_public_key: str | None = None
     langfuse_secret_key: str | None = None
     langfuse_base_url: str | None = None
+
+    # Vector store
+    vector_store_enabled: bool = False
+    vector_store_path: str = "./vector_store"
+    vector_store_collection: str = "dataset_rows"
+    vector_store_embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
+    vector_store_similarity_threshold: float = 0.2
+    vector_store_max_retry_attempts: int = 3
 
     @property
     def gemini(self) -> GeminiConfig:
@@ -203,6 +221,18 @@ class Settings(BaseSettings):
             public_key=self.langfuse_public_key,
             secret_key=self.langfuse_secret_key,
             base_url=self.langfuse_base_url,
+        )
+
+    @property
+    def vector_store(self) -> VectorStoreConfig:
+        """Get vector store configuration."""
+        return VectorStoreConfig(
+            enabled=self.vector_store_enabled,
+            persist_path=Path(self.vector_store_path),
+            collection_name=self.vector_store_collection,
+            embedding_model=self.vector_store_embedding_model,
+            similarity_threshold=self.vector_store_similarity_threshold,
+            max_retry_attempts=self.vector_store_max_retry_attempts,
         )
 
 
