@@ -1,8 +1,9 @@
 """Schema extraction and validation endpoints."""
 
+from datetime import datetime
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from src.api.gemini_client import get_gemini_client
 from src.core.models import SchemaExtractionRequest
@@ -22,7 +23,7 @@ class SchemaExtractRequest(BaseModel):
 class SchemaExtractResponse(BaseModel):
     """Response model for schema extraction."""
     schema: dict
-    metadata: dict = {}
+    metadata: dict = Field(default_factory=dict)
 
 
 class SchemaValidateRequest(BaseModel):
@@ -33,8 +34,8 @@ class SchemaValidateRequest(BaseModel):
 class SchemaValidateResponse(BaseModel):
     """Response model for schema validation."""
     valid: bool
-    errors: list[str] = []
-    warnings: list[str] = []
+    errors: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
 
 
 @router.post("/extract", response_model=SchemaExtractResponse)
@@ -50,14 +51,20 @@ async def extract_schema(request: SchemaExtractRequest):
             example_data=request.example_data
         )
 
-        # Call Gemini client to extract schema
-        schema_result = await gemini_client.extract_schema(extraction_request)
+        # Call Gemini client to extract schema (synchronous call - not async)
+        schema_result = gemini_client.extract_schema(extraction_request)
+
+        # Convert the schema to dict format
+        schema_dict = schema_result.schema.model_dump(mode="json")
 
         return SchemaExtractResponse(
-            schema=schema_result,
+            schema=schema_dict,
             metadata={
-                "extracted_at": "now",  # You can add timestamp
-                "source": "gemini"
+                "extracted_at": datetime.utcnow().isoformat() + "Z",
+                "source": "gemini",
+                "confidence": schema_result.confidence,
+                "suggestions": schema_result.suggestions,
+                "warnings": schema_result.warnings
             }
         )
 

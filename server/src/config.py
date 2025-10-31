@@ -235,6 +235,16 @@ class Settings(BaseSettings):
             max_retry_attempts=self.vector_store_max_retry_attempts,
         )
 
+    @property
+    def output_dir(self) -> Path:
+        """Get output directory path."""
+        return Path(self.output_storage_path)
+
+    @property
+    def temp_dir(self) -> Path:
+        """Get temp directory path."""
+        return Path(self.temp_storage_path)
+
 
 # Global settings instance
 settings = Settings()
