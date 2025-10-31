@@ -1,12 +1,10 @@
-version: '3.8'
-
 services:
   # Redis - Job state management
   redis:
     image: redis:7.2-alpine
     container_name: synthaix-redis
     ports:
-      - "6379:6379"
+      - "6380:6379"
     volumes:
       - redis_data:/data
     command: redis-server --appendonly yes

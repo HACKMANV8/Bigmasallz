@@ -2,10 +2,10 @@
 API Routes for SynthAIx backend.
 """
 
-from fastapi import APIRouter, HTTPException, BackgroundTask
+from fastapi import APIRouter, HTTPException
 from typing import Dict, Any
 import json
-from openai import OpenAI
+import google.generativeai as genai
 from ..core.config import settings
 from ..core.logging import get_logger
 from ..models.schemas import (
@@ -44,7 +44,9 @@ async def translate_schema(request: SchemaTranslateRequest) -> SchemaTranslateRe
     )
     
     try:
-        client = OpenAI(api_key=settings.OPENAI_API_KEY)
+        # Configure Gemini
+        genai.configure(api_key=settings.GEMINI_API_KEY)
+        model = genai.GenerativeModel(settings.GEMINI_MODEL)
         
         system_prompt = """You are a data schema expert. Convert natural language descriptions into structured JSON schemas for synthetic data generation.
 
@@ -74,18 +76,27 @@ Example output:
   "confidence": 0.95
 }"""
         
-        response = client.chat.completions.create(
-            model=settings.OPENAI_MODEL,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"Create a schema for: {request.prompt}"}
-            ],
-            temperature=0.3,  # Lower temperature for more consistent schemas
-            response_format={"type": "json_object"}
+        prompt = f"{system_prompt}\n\nCreate a schema for: {request.prompt}"
+        
+        response = model.generate_content(
+            prompt,
+            generation_config=genai.types.GenerationConfig(
+                temperature=0.3,  # Lower temperature for more consistent schemas
+                max_output_tokens=4096,
+            )
         )
         
         # Parse response
-        content = response.choices[0].message.content
+        content = response.text.strip()
+        # Clean markdown formatting if present
+        if content.startswith('```json'):
+            content = content[7:]
+        if content.startswith('```'):
+            content = content[3:]
+        if content.endswith('```'):
+            content = content[:-3]
+        content = content.strip()
+        
         result = json.loads(content)
         
         # Validate and construct response

@@ -1,0 +1,10 @@
+{
+  "mcp.servers": {
+    "synthaix-data-generator": {
+      "command": "node",
+      "args": ["/home/neonpulse/Dev/codezz/hackthons/synthaix/mcp-server/dist/index.js"],
+      "description": "SynthAIx MCP Server - Use GitHub Copilot for unlimited synthetic data generation",
+      "env": {}
+    }
+  }
+}

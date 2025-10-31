@@ -1,0 +1,29 @@
+{
+  "name": "synthaix-mcp-server",
+  "version": "1.0.0",
+  "description": "MCP server for SynthAIx synthetic data generation using GitHub Copilot",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "start": "node dist/index.js",
+    "prepare": "npm run build"
+  },
+  "keywords": [
+    "mcp",
+    "synthetic-data",
+    "copilot",
+    "data-generation"
+  ],
+  "author": "SynthAIx",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^0.5.0",
+    "zod": "^3.22.4"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "typescript": "^5.3.3"
+  }
+}

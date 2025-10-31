@@ -79,7 +79,12 @@ class JobManager:
                 "api_calls": 0,
                 "avg_response_time": 0.0,
                 "deduplication_rate": 0.0,
-                "total_duplicates_removed": 0
+                "total_duplicates_removed": 0,
+                "chunks_completed": 0,
+                "chunks_in_progress": 0,
+                "chunks_failed": 0,
+                "rows_per_second": 0.0,
+                "estimated_time_remaining": 0.0
             },
             "data": [],
             "error": None,
@@ -195,6 +200,29 @@ class JobManager:
         
         # Update completed rows
         job_data["completed_rows"] = len(job_data["data"])
+        
+        # Update real-time metrics
+        chunks_completed = sum(1 for c in job_data["chunks"] if c["status"] == "completed")
+        chunks_in_progress = sum(1 for c in job_data["chunks"] if c["status"] == "in_progress")
+        chunks_failed = sum(1 for c in job_data["chunks"] if c["status"] == "failed")
+        
+        job_data["metrics"]["chunks_completed"] = chunks_completed
+        job_data["metrics"]["chunks_in_progress"] = chunks_in_progress
+        job_data["metrics"]["chunks_failed"] = chunks_failed
+        
+        # Calculate rows per second and ETA
+        if job_data["start_time"]:
+            start_dt = datetime.fromisoformat(job_data["start_time"])
+            elapsed = (datetime.utcnow() - start_dt).total_seconds()
+            if elapsed > 0:
+                rows_per_second = job_data["completed_rows"] / elapsed
+                job_data["metrics"]["rows_per_second"] = round(rows_per_second, 2)
+                
+                # Estimate time remaining
+                remaining_rows = job_data["total_rows"] - job_data["completed_rows"]
+                if rows_per_second > 0:
+                    eta_seconds = remaining_rows / rows_per_second
+                    job_data["metrics"]["estimated_time_remaining"] = round(eta_seconds, 1)
         
         # Update metrics
         if "tokens_used" in chunk_result:

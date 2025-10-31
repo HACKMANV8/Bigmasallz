@@ -8,7 +8,7 @@ from typing import Dict, Any, List
 from ..core.config import settings
 from ..core.logging import get_logger
 from ..models.schemas import DataSchema, JobStatus
-from ..agents.generator import GeneratorAgent
+from ..agents.generator_mcp import MCPGeneratorAgent
 from ..utils.job_manager import JobManager
 
 logger = get_logger(__name__)
@@ -89,9 +89,9 @@ class OrchestratorAgent:
             # Calculate number of chunks
             num_chunks = (total_rows + chunk_size - 1) // chunk_size
             
-            # Create worker agents
+            # Create worker agents (using MCP + GitHub Copilot!)
             agents = [
-                GeneratorAgent(
+                MCPGeneratorAgent(
                     agent_id=i,
                     schema=schema,
                     enable_deduplication=enable_deduplication

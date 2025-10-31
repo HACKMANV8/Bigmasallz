@@ -114,9 +114,22 @@ class DeduplicationTool:
             
             try:
                 # Query collection for similar rows
+                collection_count = self.collection.count()
+                
+                # Skip query if collection is empty
+                if collection_count == 0:
+                    unique_rows.append(row)
+                    # Add to collection
+                    self.collection.add(
+                        documents=[row_text],
+                        ids=[row_id],
+                        metadatas=[{"row": json.dumps(row)}]
+                    )
+                    continue
+                
                 results = self.collection.query(
                     query_texts=[row_text],
-                    n_results=min(n_results, self.collection.count()),
+                    n_results=min(n_results, collection_count),
                     include=["distances"]
                 )
                 

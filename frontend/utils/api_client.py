@@ -30,6 +30,7 @@ class APIClient:
         self, 
         method: str, 
         endpoint: str, 
+        timeout: int = None,  # Changed to None for no timeout
         **kwargs
     ) -> Dict[str, Any]:
         """
@@ -38,6 +39,7 @@ class APIClient:
         Args:
             method: HTTP method
             endpoint: API endpoint
+            timeout: Request timeout in seconds (None for no timeout)
             **kwargs: Additional request arguments
             
         Returns:
@@ -46,9 +48,13 @@ class APIClient:
         url = f"{self.base_url}{self.api_prefix}{endpoint}"
         
         try:
-            response = requests.request(method, url, timeout=30, **kwargs)
+            response = requests.request(method, url, timeout=timeout, **kwargs)
             response.raise_for_status()
             return response.json()
+        except requests.exceptions.Timeout:
+            raise Exception(f"API request timed out after {timeout} seconds")
+        except requests.exceptions.ConnectionError as e:
+            raise Exception(f"Connection error: {str(e)}. Is the backend running?")
         except requests.exceptions.RequestException as e:
             raise Exception(f"API request failed: {str(e)}")
     
@@ -65,6 +71,7 @@ class APIClient:
         return self._make_request(
             "POST",
             "/schema/translate",
+            timeout=None,  # No timeout
             json={"prompt": prompt}
         )
     
@@ -114,7 +121,8 @@ class APIClient:
         """
         return self._make_request(
             "GET",
-            f"/jobs/{job_id}/status"
+            f"/jobs/{job_id}/status",
+            timeout=None  # No timeout for status checks
         )
     
     def health_check(self) -> Dict[str, Any]:
@@ -124,4 +132,8 @@ class APIClient:
         Returns:
             Health check response
         """
-        return self._make_request("GET", "/health")
+        return self._make_request(
+            "GET",
+            "/health",
+            timeout=None  # No timeout
+        )
