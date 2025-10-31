@@ -62,6 +62,14 @@ class RateLimitConfig(BaseModel):
     tokens_per_minute: int = 50000
 
 
+class LangfuseConfig(BaseModel):
+    """Langfuse telemetry configuration."""
+    enabled: bool = False
+    public_key: str | None = None
+    secret_key: str | None = None
+    base_url: str | None = None
+
+
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
 
@@ -115,6 +123,12 @@ class Settings(BaseSettings):
     # Logging
     log_level: str = "INFO"
     log_file: str = "./logs/app.log"
+
+    # Langfuse telemetry
+    langfuse_enabled: bool = False
+    langfuse_public_key: str | None = None
+    langfuse_secret_key: str | None = None
+    langfuse_base_url: str | None = None
 
     @property
     def gemini(self) -> GeminiConfig:
@@ -176,6 +190,19 @@ class Settings(BaseSettings):
         return RateLimitConfig(
             requests_per_minute=self.rate_limit_requests_per_minute,
             tokens_per_minute=self.rate_limit_tokens_per_minute
+        )
+
+    @property
+    def langfuse(self) -> LangfuseConfig:
+        """Get Langfuse telemetry configuration."""
+        enabled = bool(
+            self.langfuse_enabled and self.langfuse_public_key and self.langfuse_secret_key
+        )
+        return LangfuseConfig(
+            enabled=enabled,
+            public_key=self.langfuse_public_key,
+            secret_key=self.langfuse_secret_key,
+            base_url=self.langfuse_base_url,
         )
 
 
